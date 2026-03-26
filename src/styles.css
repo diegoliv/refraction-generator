@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #1e1e1e;
+  --color-foreground: #f5f5f5;
+  --color-muted: #2c2c2c;
+  --color-muted-foreground: #a8a8a8;
+  --color-popover: #2c2c2c;
+  --color-popover-foreground: #f5f5f5;
+  --color-panel: rgba(37, 37, 38, 0.96);
+  --color-card: rgba(37, 37, 38, 0.96);
+  --color-card-foreground: #f5f5f5;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-input: rgba(255, 255, 255, 0.035);
+  --color-primary: #0d99ff;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: rgba(255, 255, 255, 0.055);
+  --color-secondary-foreground: #f5f5f5;
+  --color-accent: rgba(255, 255, 255, 0.05);
+  --color-accent-foreground: #f5f5f5;
+  --color-destructive: #f24822;
+  --color-destructive-foreground: #fff7f7;
+  --color-ring: rgba(13, 153, 255, 0.75);
+  --color-stage: linear-gradient(180deg, rgba(255,255,255,0.014), rgba(255,255,255,0.008));
+  --font-sans: "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #1e1e1e;
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  isolation: isolate;
+}
+
+.gradient-editor .gradient-editor__color-picker,
+.gradient-editor .rbgcp-wrapper,
+.gradient-editor .rbgcp-gradient-picker,
+.gradient-editor .rbgcp-color-picker {
+  width: 100% !important;
+  max-width: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.gradient-editor .rbgcp-colorpicker-handler,
+.gradient-editor .rbgcp-range,
+.gradient-editor .rbgcp-gradient-slider,
+.gradient-editor .rbgcp-gradient-slider-bar,
+.gradient-editor .rbgcp-picker-layout,
+.gradient-editor .rbgcp-body {
+  background: transparent !important;
+}
+
+.gradient-editor .rbgcp-toolbar,
+.gradient-editor .rbgcp-presets {
+  background: transparent !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.gradient-editor .rbgcp-control-btn,
+.gradient-editor .rbgcp-input,
+.gradient-editor .rbgcp-range-input,
+.gradient-editor .rbgcp-degree-input,
+.gradient-editor .rbgcp-stop-input {
+  border-radius: 6px !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #f5f5f5 !important;
+}
+
+.gradient-editor .rbgcp-color-picker input,
+.gradient-editor .rbgcp-color-picker button {
+  font-family: var(--font-sans) !important;
+}
+
+.gradient-editor .rbgcp-text,
+.gradient-editor .rbgcp-label {
+  color: #a8a8a8 !important;
+}
+
+.preview-stage {
+  background: linear-gradient(180deg, rgba(255,255,255,0.012), rgba(255,255,255,0.004));
+}
+
+.gradient-editor__meta {
+  display: none;
+}
+
+.gradient-editor__picker {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
