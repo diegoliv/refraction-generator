@@ -126,12 +126,7 @@ vec4 renderGradientBackground(vec2 uv, vec2 origin, vec2 aspect) {
   float gradientMix = 1.0 - uv.y;
   vec3 base = mix(uBackgroundBottom, uBackgroundTop, gradientMix);
   float alpha = mix(uBackgroundBottomAlpha, uBackgroundTopAlpha, gradientMix);
-  vec2 washDelta = (uv - origin) * aspect;
-  float washRadius = length(washDelta);
-  float wash = exp(-pow(washRadius / 0.9, 2.0));
-  float verticalMist = exp(-pow((uv.y - 0.58) / 0.44, 2.0)) * 0.06;
-  vec3 color = base + uBackgroundWash * wash * 0.065 + vec3(verticalMist) * alpha;
-  return vec4(color, alpha);
+  return vec4(base, alpha);
 }
 
 vec4 renderBackground(vec2 uv, vec2 origin, vec2 aspect) {
@@ -305,7 +300,8 @@ void main() {
   vec4 particles = renderParticles(vUv, origin, aspect);
   color = alphaOver(color, cone);
   color = alphaOver(color, particles);
-  color.rgb = clamp(color.rgb + renderGrain(vUv), 0.0, 1.0);
+  float grainMask = clamp(max(cone.a, particles.a), 0.0, 1.0);
+  color.rgb = clamp(color.rgb + renderGrain(vUv) * grainMask, 0.0, 1.0);
 
   gl_FragColor = vec4(color.rgb, clamp(color.a, 0.0, 1.0));
 }
@@ -828,6 +824,7 @@ export function createShaderSceneRenderer(): SceneRenderer {
     },
   };
 }
+
 
 
 
