@@ -6,6 +6,21 @@ export type RayBand = {
   softness: number;
 };
 
+export type RayBezierProfile = {
+  start: number;
+  mid: number;
+  end: number;
+  cp1x: number;
+  cp1y: number;
+  cp2x: number;
+  cp2y: number;
+};
+
+export type RayShapeConfig = {
+  diameter: number;
+  wallProfile: RayBezierProfile;
+};
+
 export type SceneConfig = {
   seed: number;
   background: {
@@ -21,15 +36,19 @@ export type SceneConfig = {
     originY: number;
     rotation: number;
     fanAngle: number;
+    length: number;
     startDistance: number;
     endDistance: number;
     opacity: number;
     startBlur: number;
     blur: number;
+    blurProfile: RayBezierProfile;
+    opacityProfile: RayBezierProfile;
     driftAmount: number;
     driftSpeed: number;
     rotationSpeed: number;
     pausedWhileParticlesMove: boolean;
+    shape: RayShapeConfig;
     bands: RayBand[];
   };
   particles: {

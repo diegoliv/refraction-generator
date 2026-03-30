@@ -28,6 +28,7 @@ void main() {
 }
 `;
 
+
 const FRAGMENT_SHADER_SOURCE = `
 precision highp float;
 
@@ -37,13 +38,26 @@ uniform float uParticleProgress;
 uniform float uSeed;
 uniform vec2 uOrigin;
 uniform float uRotation;
-uniform float uFanAngle;
-uniform float uStartDistance;
-uniform float uEndDistance;
+uniform float uTunnelLength;
 uniform float uOpacity;
-uniform float uStartBlur;
-uniform float uEndBlur;
+uniform float uBlurAmount;
 uniform float uGlobalBlur;
+uniform vec2 uWallControl1;
+uniform vec2 uWallControl2;
+uniform float uWallStart;
+uniform float uWallMid;
+uniform float uWallEnd;
+uniform float uTunnelDiameter;
+uniform vec2 uBlurControl1;
+uniform vec2 uBlurControl2;
+uniform float uBlurProfileStart;
+uniform float uBlurProfileMid;
+uniform float uBlurProfileEnd;
+uniform vec2 uOpacityControl1;
+uniform vec2 uOpacityControl2;
+uniform float uOpacityProfileStart;
+uniform float uOpacityProfileMid;
+uniform float uOpacityProfileEnd;
 uniform float uBackgroundMode;
 uniform vec3 uBackgroundTop;
 uniform vec3 uBackgroundBottom;
@@ -138,7 +152,56 @@ vec4 renderBackground(vec2 uv, vec2 origin, vec2 aspect) {
   return renderGradientBackground(uv, origin, aspect);
 }
 
-vec4 renderCone(vec2 uv, vec2 origin, vec2 aspect) {
+float quadraticBezierValue(float p0, float p1, float p2, float t) {
+  float invT = 1.0 - t;
+  return invT * invT * p0 + 2.0 * invT * t * p1 + t * t * p2;
+}
+
+float sampleHalfProfile(float startValue, float endValue, float controlX, float controlY, float x) {
+  float target = clamp(x, 0.0, 1.0);
+  float lower = 0.0;
+  float upper = 1.0;
+  float t = target;
+
+  for (int i = 0; i < 8; i += 1) {
+    float currentX = quadraticBezierValue(0.0, controlX, 1.0, t);
+    if (currentX < target) {
+      lower = t;
+    } else {
+      upper = t;
+    }
+    t = 0.5 * (lower + upper);
+  }
+
+  return clamp(quadraticBezierValue(startValue, controlY, endValue, t), 0.0, 1.0);
+}
+
+float sampleProfile(float startValue, float midValue, float endValue, vec2 control1, vec2 control2, float x) {
+  float target = clamp(x, 0.0, 1.0);
+  if (target <= 0.5) {
+    return sampleHalfProfile(startValue, midValue, clamp(control1.x * 2.0, 0.0, 1.0), control1.y, target * 2.0);
+  }
+
+  return sampleHalfProfile(midValue, endValue, clamp((control2.x - 0.5) * 2.0, 0.0, 1.0), control2.y, (target - 0.5) * 2.0);
+}
+
+float wallProfile(float t) {
+  return sampleProfile(uWallStart, uWallMid, uWallEnd, uWallControl1, uWallControl2, t);
+}
+
+float blurProfile(float t) {
+  return sampleProfile(uBlurProfileStart, uBlurProfileMid, uBlurProfileEnd, uBlurControl1, uBlurControl2, t);
+}
+
+float opacityProfile(float t) {
+  return sampleProfile(uOpacityProfileStart, uOpacityProfileMid, uOpacityProfileEnd, uOpacityControl1, uOpacityControl2, t);
+}
+
+float tunnelHalfWidth(float t) {
+  return max(0.0006, 0.5 * max(0.05, uTunnelDiameter) * wallProfile(t));
+}
+
+vec4 renderTunnel(vec2 uv, vec2 origin, vec2 aspect) {
   vec2 p = (uv - origin) * aspect;
   float rotation = radians(uRotation);
   vec2 axis = vec2(cos(rotation), sin(rotation));
@@ -146,76 +209,76 @@ vec4 renderCone(vec2 uv, vec2 origin, vec2 aspect) {
 
   float axial = dot(p, axis);
   float lateral = dot(p, side);
-  float startDistance = max(0.0, uStartDistance);
-  float endDistance = max(startDistance + 0.001, uEndDistance);
-  float axialRange = max(0.0001, endDistance - startDistance);
+  float axialRange = max(0.0001, max(0.001, uTunnelLength) * aspect.x);
+  float startDistance = -0.5 * axialRange;
+  float endDistance = 0.5 * axialRange;
   float axialT = clamp((axial - startDistance) / axialRange, 0.0, 1.0);
 
-  float tipBlur = max(0.0, uStartBlur + uGlobalBlur);
-  float tailBlur = max(0.0, uEndBlur + uGlobalBlur);
+  float halfWidth = tunnelHalfWidth(axialT);
+  float tunnelCoord = lateral / max(halfWidth, 0.0002);
+  float profileBlur = uBlurAmount * blurProfile(axialT);
+  float blurAmount = profileBlur + uGlobalBlur;
+  float startProfileBlur = uBlurAmount * blurProfile(0.0) + uGlobalBlur;
+  float endProfileBlur = uBlurAmount * blurProfile(1.0) + uGlobalBlur;
+  float opacityFactor = opacityProfile(axialT);
 
-  float halfAngle = radians(uFanAngle) * 0.5;
-  float halfWidth = max(0.0002, tan(halfAngle) * max(axial, 0.0));
-  float coneCoord = lateral / halfWidth;
-
-  float startSoft = 0.0007 + tipBlur * 0.022;
-  float endSoft = 0.001 + tailBlur * 0.18;
+  float startSoft = 0.0009 + startProfileBlur * 0.08;
+  float endSoft = 0.0009 + endProfileBlur * 0.08;
   float axialMask = smoothstep(startDistance - startSoft, startDistance + startSoft, axial) *
     (1.0 - smoothstep(endDistance - endSoft, endDistance + endSoft, axial));
 
-  float edgeSoftness = 0.0014 + mix(tipBlur * 0.08, tailBlur * 0.22, axialT);
-  float edgeMask = 1.0 - smoothstep(1.0 - edgeSoftness, 1.0 + edgeSoftness * 1.15, abs(coneCoord));
-  float coneMask = axialMask * edgeMask;
+  float edgeSoftness = 0.0018 + blurAmount * 0.15;
+  float edgeMask = 1.0 - smoothstep(1.0 - edgeSoftness, 1.0 + edgeSoftness * 1.25, abs(tunnelCoord));
+  float tunnelMask = axialMask * edgeMask;
 
   float gradientRotation = fract(uConeProgress);
-  float baseU = fract(coneCoord * 0.5 + 0.5 + gradientRotation);
-  float blurAmount = mix(tipBlur, tailBlur, axialT);
+  float baseU = fract(tunnelCoord * 0.5 + 0.5 + gradientRotation);
   float blurMix = clamp(blurAmount / 2.5, 0.0, 1.0);
   float sampleJitter = (interleavedGradientNoise(floor(uv * uResolution) + vec2(uSeed * 0.11, uSeed * 0.23)) - 0.5) / float(4096.0);
   float sampleU = fract(baseU + sampleJitter);
 
   vec3 sharpGradient = toLinear(sampleGradient(sampleU));
   vec3 blurredGradient = toLinear(sampleBlurredGradient(sampleU));
-  vec3 gradientColor = mix(sharpGradient, blurredGradient, blurMix * 0.5);
+  vec3 gradientColor = mix(sharpGradient, blurredGradient, blurMix * 0.58);
   vec3 tintLift = mix(vec3(1.0), sharpGradient, 0.18);
   gradientColor = mix(gradientColor, tintLift, 0.05);
 
-  float coreLift = exp(-pow(coneCoord / mix(0.11 + tipBlur * 0.03, 0.24 + tailBlur * 0.06, axialT), 2.0)) * mix(0.11, 0.028, axialT);
-  float innerGlow = exp(-pow(coneCoord / (0.18 + blurAmount * 0.04 + axialT * 0.06), 2.0)) * mix(0.012, 0.035, clamp(blurAmount / 2.5, 0.0, 1.0));
-  float edgeAura = exp(-pow((abs(coneCoord) - 0.94) / (0.04 + blurAmount * 0.1 + axialT * 0.12), 2.0)) * (0.03 + axialT * 0.035 + blurAmount * 0.018);
-  float outerVeil = exp(-pow((abs(coneCoord) - 1.02) / (0.08 + blurAmount * 0.14 + axialT * 0.08), 2.0)) * (0.02 + blurAmount * 0.014);
-  float apexGlow = exp(-pow(axialT / max(0.025, 0.05 + tipBlur * 0.1), 2.0)) * 0.14;
-  float depthFade = mix(1.0, 0.44, axialT);
+  float coreLift = exp(-pow(tunnelCoord / (0.13 + blurAmount * 0.06), 2.0)) * 0.075;
+  float innerGlow = exp(-pow(tunnelCoord / (0.2 + blurAmount * 0.08), 2.0)) * mix(0.015, 0.04, blurMix);
+  float edgeAura = exp(-pow((abs(tunnelCoord) - 0.94) / (0.04 + blurAmount * 0.12), 2.0)) * (0.028 + blurAmount * 0.018);
+  float outerVeil = exp(-pow((abs(tunnelCoord) - 1.02) / (0.08 + blurAmount * 0.16), 2.0)) * (0.018 + blurAmount * 0.018);
+  float leftGlow = exp(-pow(axialT / max(0.03, 0.06 + startProfileBlur * 0.12), 2.0)) * 0.08;
+  float rightGlow = exp(-pow((1.0 - axialT) / max(0.03, 0.06 + endProfileBlur * 0.12), 2.0)) * 0.08;
 
-  vec3 beamColor = gradientColor * depthFade;
+  vec3 beamColor = gradientColor;
   beamColor += gradientColor * coreLift;
   beamColor += gradientColor * innerGlow;
   beamColor += gradientColor * edgeAura;
   beamColor += gradientColor * outerVeil;
-  beamColor += tintLift * apexGlow;
+  beamColor += tintLift * leftGlow;
+  beamColor += tintLift * rightGlow;
 
-  float alpha = coneMask * uOpacity * mix(1.0, 0.26, axialT);
+  float alpha = tunnelMask * uOpacity * opacityFactor;
   beamColor = toSrgb(beamColor);
-  float coneDither = (interleavedGradientNoise(floor(uv * uResolution) + vec2(19.0, 73.0) + uSeed) - 0.5) / 255.0;
-  beamColor += vec3(coneDither) * mix(0.9, 0.25, alpha);
+  float tunnelDither = (interleavedGradientNoise(floor(uv * uResolution) + vec2(19.0, 73.0) + uSeed) - 0.5) / 255.0;
+  beamColor += vec3(tunnelDither) * mix(0.9, 0.25, alpha);
   return vec4(clamp(beamColor, 0.0, 1.0), alpha);
 }
 
 vec4 renderParticles(vec2 uv, vec2 origin, vec2 aspect) {
   vec4 total = vec4(0.0);
-  float count = min(uParticleCount, float(${MAX_SHADER_PARTICLES}.0));
+  float count = min(uParticleCount, float(500.0));
   float pixelScale = 1.0 / max(1.0, min(uResolution.x, uResolution.y));
 
   float rotation = radians(uRotation);
   vec2 axis = vec2(cos(rotation), sin(rotation));
   vec2 side = vec2(-axis.y, axis.x);
-  float startDistance = max(0.0, uStartDistance);
-  float endDistance = max(startDistance + 0.001, uEndDistance);
-  float coneLength = max(0.0001, endDistance - startDistance);
-  float halfAngle = radians(uFanAngle) * 0.5;
+  float tunnelLength = max(0.0001, max(0.001, uTunnelLength) * aspect.x);
+  float startDistance = -0.5 * tunnelLength;
+  float endDistance = 0.5 * tunnelLength;
   float spreadScale = mix(0.62, 1.18, clamp(uParticleSpread, 0.0, 1.5) / 1.5);
 
-  for (int i = 0; i < ${MAX_SHADER_PARTICLES}; i += 1) {
+  for (int i = 0; i < 500; i += 1) {
     float fi = float(i);
     if (fi >= count) {
       continue;
@@ -239,19 +302,19 @@ vec4 renderParticles(vec2 uv, vec2 origin, vec2 aspect) {
       : fract(hash11(id * 17.37) + uParticleProgress * cycles);
 
     float axialT = travel;
-    float axial = startDistance + axialT * coneLength;
-    float halfWidth = max(0.0012, tan(halfAngle) * max(axial, 0.0));
+    float axial = startDistance + axialT * tunnelLength;
+    float halfWidth = tunnelHalfWidth(axialT);
 
     float edgeBias = smoothstep(0.46, 0.9, radialSelector);
     float interiorRadius = mix(0.08, 0.72, pow(radialNoise, 0.95));
-    float edgeRadius = mix(0.86, 1.26, pow(radialNoise, 0.78));
+    float edgeRadius = mix(0.86, 1.18, pow(radialNoise, 0.78));
     float radialAbs = mix(interiorRadius, edgeRadius, edgeBias) * spreadScale;
 
-    float funnelFloor = mix(0.18, 0.78, edgeBias);
-    float funnel = mix(funnelFloor, 1.0, smoothstep(0.03, 0.3, axialT));
+    float funnelFloor = mix(0.18, 0.82, edgeBias);
+    float funnel = mix(funnelFloor, 1.0, smoothstep(0.03, 0.32, axialT));
     float lateral = sideSign * radialAbs * halfWidth * funnel;
-    float sway = sin(uParticleProgress * TAU * cycles + swayPhase) * halfWidth * swayAmount * mix(0.3, 1.0, axialT);
-    float axialJitter = cos(uParticleProgress * TAU * cycles + swayPhase * 0.7) * coneLength * 0.006 * uParticleDirectionRandomness;
+    float sway = sin(uParticleProgress * TAU * cycles + swayPhase) * halfWidth * swayAmount * mix(0.35, 1.0, axialT);
+    float axialJitter = cos(uParticleProgress * TAU * cycles + swayPhase * 0.7) * tunnelLength * 0.006 * uParticleDirectionRandomness;
 
     vec2 localParticle = axis * (axial + axialJitter) + side * (lateral + sway);
     vec2 particleUv = origin + localParticle / aspect;
@@ -296,16 +359,17 @@ void main() {
   vec2 origin = uOrigin;
 
   vec4 color = renderBackground(vUv, origin, aspect);
-  vec4 cone = renderCone(vUv, origin, aspect);
+  vec4 tunnel = renderTunnel(vUv, origin, aspect);
   vec4 particles = renderParticles(vUv, origin, aspect);
-  color = alphaOver(color, cone);
+  color = alphaOver(color, tunnel);
   color = alphaOver(color, particles);
-  float grainMask = clamp(max(cone.a, particles.a), 0.0, 1.0);
+  float grainMask = clamp(max(tunnel.a, particles.a), 0.0, 1.0);
   color.rgb = clamp(color.rgb + renderGrain(vUv) * grainMask, 0.0, 1.0);
 
   gl_FragColor = vec4(color.rgb, clamp(color.a, 0.0, 1.0));
 }
 `;
+
 
 type ShaderResources = {
   gl: WebGLRenderingContext;
@@ -330,13 +394,26 @@ type ShaderResources = {
     seed: WebGLUniformLocation | null;
     origin: WebGLUniformLocation | null;
     rotation: WebGLUniformLocation | null;
-    fanAngle: WebGLUniformLocation | null;
-    startDistance: WebGLUniformLocation | null;
-    endDistance: WebGLUniformLocation | null;
+    tunnelLength: WebGLUniformLocation | null;
     opacity: WebGLUniformLocation | null;
-    startBlur: WebGLUniformLocation | null;
-    endBlur: WebGLUniformLocation | null;
+    blurAmount: WebGLUniformLocation | null;
     globalBlur: WebGLUniformLocation | null;
+    wallControl1: WebGLUniformLocation | null;
+    wallControl2: WebGLUniformLocation | null;
+    wallStart: WebGLUniformLocation | null;
+    wallMid: WebGLUniformLocation | null;
+    wallEnd: WebGLUniformLocation | null;
+    tunnelDiameter: WebGLUniformLocation | null;
+    blurControl1: WebGLUniformLocation | null;
+    blurControl2: WebGLUniformLocation | null;
+    blurProfileStart: WebGLUniformLocation | null;
+    blurProfileMid: WebGLUniformLocation | null;
+    blurProfileEnd: WebGLUniformLocation | null;
+    opacityControl1: WebGLUniformLocation | null;
+    opacityControl2: WebGLUniformLocation | null;
+    opacityProfileStart: WebGLUniformLocation | null;
+    opacityProfileMid: WebGLUniformLocation | null;
+    opacityProfileEnd: WebGLUniformLocation | null;
     backgroundMode: WebGLUniformLocation | null;
     backgroundTop: WebGLUniformLocation | null;
     backgroundBottom: WebGLUniformLocation | null;
@@ -624,13 +701,26 @@ function createShaderResources(canvas: HTMLCanvasElement): ShaderInitResult {
         seed: gl.getUniformLocation(programResult.program, 'uSeed'),
         origin: gl.getUniformLocation(programResult.program, 'uOrigin'),
         rotation: gl.getUniformLocation(programResult.program, 'uRotation'),
-        fanAngle: gl.getUniformLocation(programResult.program, 'uFanAngle'),
-        startDistance: gl.getUniformLocation(programResult.program, 'uStartDistance'),
-        endDistance: gl.getUniformLocation(programResult.program, 'uEndDistance'),
+        tunnelLength: gl.getUniformLocation(programResult.program, 'uTunnelLength'),
         opacity: gl.getUniformLocation(programResult.program, 'uOpacity'),
-        startBlur: gl.getUniformLocation(programResult.program, 'uStartBlur'),
-        endBlur: gl.getUniformLocation(programResult.program, 'uEndBlur'),
+        blurAmount: gl.getUniformLocation(programResult.program, 'uBlurAmount'),
         globalBlur: gl.getUniformLocation(programResult.program, 'uGlobalBlur'),
+        wallControl1: gl.getUniformLocation(programResult.program, 'uWallControl1'),
+        wallControl2: gl.getUniformLocation(programResult.program, 'uWallControl2'),
+        wallStart: gl.getUniformLocation(programResult.program, 'uWallStart'),
+        wallMid: gl.getUniformLocation(programResult.program, 'uWallMid'),
+        wallEnd: gl.getUniformLocation(programResult.program, 'uWallEnd'),
+        tunnelDiameter: gl.getUniformLocation(programResult.program, 'uTunnelDiameter'),
+        blurControl1: gl.getUniformLocation(programResult.program, 'uBlurControl1'),
+        blurControl2: gl.getUniformLocation(programResult.program, 'uBlurControl2'),
+        blurProfileStart: gl.getUniformLocation(programResult.program, 'uBlurProfileStart'),
+        blurProfileMid: gl.getUniformLocation(programResult.program, 'uBlurProfileMid'),
+        blurProfileEnd: gl.getUniformLocation(programResult.program, 'uBlurProfileEnd'),
+        opacityControl1: gl.getUniformLocation(programResult.program, 'uOpacityControl1'),
+        opacityControl2: gl.getUniformLocation(programResult.program, 'uOpacityControl2'),
+        opacityProfileStart: gl.getUniformLocation(programResult.program, 'uOpacityProfileStart'),
+        opacityProfileMid: gl.getUniformLocation(programResult.program, 'uOpacityProfileMid'),
+        opacityProfileEnd: gl.getUniformLocation(programResult.program, 'uOpacityProfileEnd'),
         backgroundMode: gl.getUniformLocation(programResult.program, 'uBackgroundMode'),
         backgroundTop: gl.getUniformLocation(programResult.program, 'uBackgroundTop'),
         backgroundBottom: gl.getUniformLocation(programResult.program, 'uBackgroundBottom'),
@@ -760,13 +850,26 @@ function renderShaderScene(resources: ShaderResources, config: SceneConfig, prog
   gl.uniform1f(uniforms.seed, config.seed);
   gl.uniform2f(uniforms.origin, config.rays.originX, config.rays.originY);
   gl.uniform1f(uniforms.rotation, config.rays.rotation);
-  gl.uniform1f(uniforms.fanAngle, config.rays.fanAngle);
-  gl.uniform1f(uniforms.startDistance, config.rays.startDistance);
-  gl.uniform1f(uniforms.endDistance, config.rays.endDistance);
+  gl.uniform1f(uniforms.tunnelLength, config.rays.length);
   gl.uniform1f(uniforms.opacity, config.rays.enabled ? config.rays.opacity : 0);
-  gl.uniform1f(uniforms.startBlur, Math.max(0, config.rays.startBlur));
-  gl.uniform1f(uniforms.endBlur, Math.max(0, config.rays.blur));
+  gl.uniform1f(uniforms.blurAmount, Math.max(0, config.rays.blur));
   gl.uniform1f(uniforms.globalBlur, Math.max(0, config.postprocessing.globalBlur));
+  gl.uniform2f(uniforms.wallControl1, config.rays.shape.wallProfile.cp1x, config.rays.shape.wallProfile.cp1y);
+  gl.uniform2f(uniforms.wallControl2, config.rays.shape.wallProfile.cp2x, config.rays.shape.wallProfile.cp2y);
+  gl.uniform1f(uniforms.wallStart, config.rays.shape.wallProfile.start);
+  gl.uniform1f(uniforms.wallMid, config.rays.shape.wallProfile.mid);
+  gl.uniform1f(uniforms.wallEnd, config.rays.shape.wallProfile.end);
+  gl.uniform1f(uniforms.tunnelDiameter, config.rays.shape.diameter);
+  gl.uniform2f(uniforms.blurControl1, config.rays.blurProfile.cp1x, config.rays.blurProfile.cp1y);
+  gl.uniform2f(uniforms.blurControl2, config.rays.blurProfile.cp2x, config.rays.blurProfile.cp2y);
+  gl.uniform1f(uniforms.blurProfileStart, config.rays.blurProfile.start);
+  gl.uniform1f(uniforms.blurProfileMid, config.rays.blurProfile.mid);
+  gl.uniform1f(uniforms.blurProfileEnd, config.rays.blurProfile.end);
+  gl.uniform2f(uniforms.opacityControl1, config.rays.opacityProfile.cp1x, config.rays.opacityProfile.cp1y);
+  gl.uniform2f(uniforms.opacityControl2, config.rays.opacityProfile.cp2x, config.rays.opacityProfile.cp2y);
+  gl.uniform1f(uniforms.opacityProfileStart, config.rays.opacityProfile.start);
+  gl.uniform1f(uniforms.opacityProfileMid, config.rays.opacityProfile.mid);
+  gl.uniform1f(uniforms.opacityProfileEnd, config.rays.opacityProfile.end);
   gl.uniform1f(uniforms.backgroundMode, config.background.type === 'image' ? 1 : 0);
   setColorUniform(gl, uniforms.backgroundTop, config.background.topColor);
   setColorUniform(gl, uniforms.backgroundBottom, config.background.bottomColor);
@@ -806,8 +909,6 @@ export function createShaderSceneRenderer(): SceneRenderer {
 
   return {
     mode: 'shader',
-    requestedMode: 'shader',
-    isFallback: false,
     render({ ctx, config, progress, width, height }: RenderParams): void {
       if (width <= 0 || height <= 0) {
         return;

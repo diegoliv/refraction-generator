@@ -1,6 +1,8 @@
 import type { SceneConfig } from '../types/config';
+import { createCylinderShape, defaultBlurProfile, defaultOpacityProfile, defaultWallProfile } from '../config/defaults';
 import { BackgroundGradientField } from './BackgroundGradientField';
 import { BackgroundImageField } from './BackgroundImageField';
+import { ProfileCurveEditor } from './BezierCurveEditor';
 import { ColorField, NumberField, RangeField, SelectField, ToggleField } from './fields';
 import { GradientEditor } from './GradientEditor';
 import { Button } from './ui/button';
@@ -47,20 +49,11 @@ export function ControlsPanel({
         <AccordionContent>
           <div className="space-y-3 py-1">
             <div className="flex gap-1 rounded-md bg-muted/45 p-1">
-              <Button type="button" size="sm" variant={config.background.type === 'gradient' ? 'default' : 'ghost'} className="flex-1" onClick={() => onPatchBackground({ type: 'gradient' })}>
-                Gradient
-              </Button>
-              <Button type="button" size="sm" variant={config.background.type === 'image' ? 'default' : 'ghost'} className="flex-1" onClick={() => onPatchBackground({ type: 'image' })}>
-                Image
-              </Button>
+              <Button type="button" size="sm" variant={config.background.type === 'gradient' ? 'default' : 'ghost'} className="flex-1" onClick={() => onPatchBackground({ type: 'gradient' })}>Gradient</Button>
+              <Button type="button" size="sm" variant={config.background.type === 'image' ? 'default' : 'ghost'} className="flex-1" onClick={() => onPatchBackground({ type: 'image' })}>Image</Button>
             </div>
-
             {config.background.type === 'gradient' ? (
-              <BackgroundGradientField
-                topColor={config.background.topColor}
-                bottomColor={config.background.bottomColor}
-                onChange={({ topColor, bottomColor }) => onPatchBackground({ topColor, bottomColor })}
-              />
+              <BackgroundGradientField topColor={config.background.topColor} bottomColor={config.background.bottomColor} onChange={({ topColor, bottomColor }) => onPatchBackground({ topColor, bottomColor })} />
             ) : (
               <BackgroundImageField imageSrc={config.background.imageSrc} onChange={(imageSrc) => onPatchBackground({ imageSrc })} />
             )}
@@ -69,29 +62,79 @@ export function ControlsPanel({
       </AccordionItem>
 
       <AccordionItem value="rays">
-        <AccordionTrigger>Rays</AccordionTrigger>
+        <AccordionTrigger>Tunnel</AccordionTrigger>
         <AccordionContent>
-          <ToggleField label="Enable refraction fan" checked={config.rays.enabled} onChange={(checked) => onPatchRays({ enabled: checked })} />
+          <ToggleField label="Enable refraction tunnel" checked={config.rays.enabled} onChange={(checked) => onPatchRays({ enabled: checked })} />
           <ToggleField label="Play animation" checked={!config.rays.pausedWhileParticlesMove} onChange={(checked) => onPatchRays({ pausedWhileParticlesMove: !checked })} />
           <div className="grid gap-x-3 gap-y-1 md:grid-cols-2">
-            <RangeField label="Origin X" value={config.rays.originX} min={0} max={1} step={0.01} onChange={(value) => onPatchRays({ originX: value })} />
-            <RangeField label="Origin Y" value={config.rays.originY} min={0} max={1} step={0.01} onChange={(value) => onPatchRays({ originY: value })} />
+            <RangeField label="Center X" value={config.rays.originX} min={0} max={1} step={0.01} onChange={(value) => onPatchRays({ originX: value })} />
+            <RangeField label="Center Y" value={config.rays.originY} min={0} max={1} step={0.01} onChange={(value) => onPatchRays({ originY: value })} />
             <RangeField label="Rotation" value={config.rays.rotation} min={-180} max={180} step={1} onChange={(value) => onPatchRays({ rotation: value })} formatValue={(value) => `${value.toFixed(0)} deg`} />
-            <RangeField label="Fan Angle" value={config.rays.fanAngle} min={5} max={180} step={1} onChange={(value) => onPatchRays({ fanAngle: value })} formatValue={(value) => `${value.toFixed(0)} deg`} />
-            <RangeField label="Start Distance" value={config.rays.startDistance} min={0} max={1} step={0.01} onChange={(value) => onPatchRays({ startDistance: value })} />
-            <RangeField label="End Distance" value={config.rays.endDistance} min={0.05} max={1.6} step={0.01} onChange={(value) => onPatchRays({ endDistance: value })} />
+            <RangeField label="Length" value={config.rays.length} min={0} max={1} step={0.01} onChange={(value) => onPatchRays({ length: value })} formatValue={(value) => `${Math.round(value * 100)}%`} />
+            <RangeField label="Diameter" value={config.rays.shape.diameter} min={0.1} max={2.6} step={0.01} onChange={(value) => onPatchRays({ shape: { ...config.rays.shape, diameter: value } })} />
             <RangeField label="Opacity" value={config.rays.opacity} min={0} max={1} step={0.01} onChange={(value) => onPatchRays({ opacity: value })} />
-            <RangeField label="Tip Blur" value={config.rays.startBlur} min={0} max={2.5} step={0.01} onChange={(value) => onPatchRays({ startBlur: value })} />
-            <RangeField label="End Blur" value={config.rays.blur} min={0} max={2.5} step={0.01} onChange={(value) => onPatchRays({ blur: value })} />
+            <RangeField label="Blur Amount" value={config.rays.blur} min={0} max={2.5} step={0.01} onChange={(value) => onPatchRays({ blur: value })} />
           </div>
+
+          <Accordion type="multiple" defaultValue={['wall-profile']} className="pt-2">
+            <AccordionItem value="wall-profile">
+              <AccordionTrigger>Wall Profile</AccordionTrigger>
+              <AccordionContent>
+                <ProfileCurveEditor
+                  label="Wall Profile"
+                  description="Drag the endpoints and midpoint to control tunnel width across left, center, and right."
+                  profile={config.rays.shape.wallProfile}
+                  startLabel="Left"
+                  endLabel="Right"
+                  topLabel="Wide"
+                  bottomLabel="Narrow"
+                  lineColor="rgba(255,255,255,0.95)"
+                  onChange={(wallProfile) => onPatchRays({ shape: { ...config.rays.shape, wallProfile } })}
+                  onReset={() => onPatchRays({ shape: { ...config.rays.shape, wallProfile: { ...defaultWallProfile } } })}
+                />
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="blur-profile">
+              <AccordionTrigger>Blur Profile</AccordionTrigger>
+              <AccordionContent>
+                <ProfileCurveEditor
+                  label="Blur Profile"
+                  description="Scales blur across left, center, and right. Top means full blur amount, bottom means none."
+                  profile={config.rays.blurProfile}
+                  startLabel="Left"
+                  endLabel="Right"
+                  topLabel="100%"
+                  bottomLabel="0%"
+                  lineColor="rgba(186,219,255,0.95)"
+                  onChange={(blurProfile) => onPatchRays({ blurProfile })}
+                  onReset={() => onPatchRays({ blurProfile: { ...defaultBlurProfile } })}
+                />
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="opacity-profile">
+              <AccordionTrigger>Opacity Profile</AccordionTrigger>
+              <AccordionContent>
+                <ProfileCurveEditor
+                  label="Opacity Profile"
+                  description="Controls visibility across left, center, and right. Top means fully visible, bottom means transparent."
+                  profile={config.rays.opacityProfile}
+                  startLabel="Left"
+                  endLabel="Right"
+                  topLabel="100%"
+                  bottomLabel="0%"
+                  lineColor="rgba(255,212,174,0.95)"
+                  onChange={(opacityProfile) => onPatchRays({ opacityProfile })}
+                  onReset={() => onPatchRays({ opacityProfile: { ...defaultOpacityProfile } })}
+                />
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </AccordionContent>
       </AccordionItem>
 
       <AccordionItem value="gradient">
         <AccordionTrigger>Gradient Stops</AccordionTrigger>
-        <AccordionContent>
-          <GradientEditor bands={config.rays.bands} onChange={onReplaceRayBands} />
-        </AccordionContent>
+        <AccordionContent><GradientEditor bands={config.rays.bands} onChange={onReplaceRayBands} /></AccordionContent>
       </AccordionItem>
 
       <AccordionItem value="particles">
@@ -102,15 +145,7 @@ export function ControlsPanel({
             <RangeField label="Count" value={config.particles.count} min={0} max={500} step={1} onChange={(value) => onPatchParticles({ count: value })} />
             <RangeField label="Opacity" value={config.particles.opacity} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ opacity: value })} />
             <ColorField label="Color" value={config.particles.color} onChange={(value) => onPatchParticles({ color: value })} />
-            <SelectField
-              label="Direction"
-              value={config.particles.direction}
-              options={[
-                { label: 'Into apex', value: 'into-apex' },
-                { label: 'From apex', value: 'from-apex' },
-              ]}
-              onChange={(value) => onPatchParticles({ direction: value as SceneConfig['particles']['direction'] })}
-            />
+            <SelectField label="Direction" value={config.particles.direction} options={[{ label: 'Into apex', value: 'into-apex' }, { label: 'From apex', value: 'from-apex' }]} onChange={(value) => onPatchParticles({ direction: value as SceneConfig['particles']['direction'] })} />
             <RangeField label="Min Size" value={config.particles.minSize} min={0.2} max={4} step={0.01} onChange={(value) => onPatchParticles({ minSize: value })} />
             <RangeField label="Max Size" value={config.particles.maxSize} min={0.2} max={6} step={0.01} onChange={(value) => onPatchParticles({ maxSize: value })} />
             <RangeField label="Min Speed" value={config.particles.minSpeed} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ minSpeed: value })} />

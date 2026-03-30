@@ -10,8 +10,5 @@ export type RenderParams = {
 
 export type SceneRenderer = {
   mode: 'shader';
-  requestedMode: 'shader';
-  isFallback: boolean;
-  fallbackReason?: string;
   render: (params: RenderParams) => void;
 };

@@ -1,4 +1,55 @@
-import type { PresetDefinition, SceneConfig } from '../types/config';
+import type { PresetDefinition, RayBezierProfile, RayShapeConfig, SceneConfig } from '../types/config';
+
+export const linearProfile: RayBezierProfile = {
+  start: 1,
+  mid: 1,
+  end: 1,
+  cp1x: 0.25,
+  cp1y: 1,
+  cp2x: 0.75,
+  cp2y: 1,
+};
+
+export const defaultWallProfile: RayBezierProfile = {
+  start: 1,
+  mid: 1,
+  end: 1,
+  cp1x: 0.25,
+  cp1y: 1,
+  cp2x: 0.75,
+  cp2y: 1,
+};
+
+export const defaultBlurProfile: RayBezierProfile = {
+  start: 1,
+  mid: 1,
+  end: 1,
+  cp1x: 0.25,
+  cp1y: 1,
+  cp2x: 0.75,
+  cp2y: 1,
+};
+
+export const defaultOpacityProfile: RayBezierProfile = {
+  start: 0,
+  mid: 1,
+  end: 1,
+  cp1x: 0.25,
+  cp1y: 0.35,
+  cp2x: 0.75,
+  cp2y: 1,
+};
+
+function cloneProfile(profile: RayBezierProfile): RayBezierProfile {
+  return { ...profile };
+}
+
+export function createCylinderShape(diameter = 1.18, wallProfile: RayBezierProfile = defaultWallProfile): RayShapeConfig {
+  return {
+    diameter,
+    wallProfile: cloneProfile(wallProfile),
+  };
+}
 
 export const defaultSceneConfig: SceneConfig = {
   seed: 2817,
@@ -11,19 +62,23 @@ export const defaultSceneConfig: SceneConfig = {
   },
   rays: {
     enabled: true,
-    originX: 0.92,
+    originX: 0.5,
     originY: 0.54,
     rotation: 180,
     fanAngle: 74,
-    startDistance: 0,
-    endDistance: 1.32,
+    length: 0.72,
+    startDistance: -0.36,
+    endDistance: 0.36,
     opacity: 0.74,
     startBlur: 0.08,
     blur: 0.94,
+    blurProfile: cloneProfile(defaultBlurProfile),
+    opacityProfile: cloneProfile(defaultOpacityProfile),
     driftAmount: 0,
     driftSpeed: 0,
     rotationSpeed: 1,
     pausedWhileParticlesMove: false,
+    shape: createCylinderShape(),
     bands: [
       { id: 'band-1', color: '#87a1e6', offset: 0.0, weight: 1.02, softness: 0.96 },
       { id: 'band-2', color: '#9ddfdc', offset: 0.16, weight: 0.98, softness: 0.98 },
@@ -86,7 +141,7 @@ export const presets: PresetDefinition[] = [
       },
       rays: {
         ...defaultSceneConfig.rays,
-        originX: 0.9,
+        originX: 0.5,
         originY: 0.57,
         fanAngle: 70,
         opacity: 0.62,
@@ -94,6 +149,33 @@ export const presets: PresetDefinition[] = [
         blur: 0.98,
         rotationSpeed: 1,
         pausedWhileParticlesMove: false,
+        shape: createCylinderShape(1.1, {
+          start: 0.12,
+          mid: 0.55,
+          end: 1,
+          cp1x: 0.24,
+          cp1y: 0.22,
+          cp2x: 0.78,
+          cp2y: 0.92,
+        }),
+        blurProfile: {
+          start: 0.35,
+          mid: 0.82,
+          end: 1,
+          cp1x: 0.24,
+          cp1y: 0.46,
+          cp2x: 0.78,
+          cp2y: 1,
+        },
+        opacityProfile: {
+          start: 0.02,
+          mid: 0.86,
+          end: 1,
+          cp1x: 0.22,
+          cp1y: 0.18,
+          cp2x: 0.76,
+          cp2y: 1,
+        },
         bands: [
           { id: 'band-1', color: '#b0bce8', offset: 0.0, weight: 1, softness: 1 },
           { id: 'band-2', color: '#c0e7ec', offset: 0.2, weight: 0.98, softness: 1 },
@@ -139,6 +221,33 @@ export const presets: PresetDefinition[] = [
         blur: 0.9,
         rotationSpeed: 1,
         pausedWhileParticlesMove: false,
+        shape: createCylinderShape(1.04, {
+          start: 0.08,
+          mid: 0.48,
+          end: 1,
+          cp1x: 0.25,
+          cp1y: 0.18,
+          cp2x: 0.78,
+          cp2y: 0.88,
+        }),
+        blurProfile: {
+          start: 0.28,
+          mid: 0.76,
+          end: 1,
+          cp1x: 0.22,
+          cp1y: 0.34,
+          cp2x: 0.75,
+          cp2y: 1,
+        },
+        opacityProfile: {
+          start: 0.06,
+          mid: 0.88,
+          end: 1,
+          cp1x: 0.24,
+          cp1y: 0.22,
+          cp2x: 0.76,
+          cp2y: 1,
+        },
         bands: [
           { id: 'band-1', color: '#ecd78f', offset: 0.0, weight: 1.08, softness: 0.94 },
           { id: 'band-2', color: '#e6c58d', offset: 0.34, weight: 1, softness: 0.96 },
@@ -181,6 +290,33 @@ export const presets: PresetDefinition[] = [
         blur: 0.84,
         rotationSpeed: 1,
         pausedWhileParticlesMove: false,
+        shape: createCylinderShape(0.94, {
+          start: 0.24,
+          mid: 0.62,
+          end: 1,
+          cp1x: 0.2,
+          cp1y: 0.34,
+          cp2x: 0.76,
+          cp2y: 1,
+        }),
+        blurProfile: {
+          start: 0.4,
+          mid: 0.82,
+          end: 1,
+          cp1x: 0.22,
+          cp1y: 0.52,
+          cp2x: 0.78,
+          cp2y: 1,
+        },
+        opacityProfile: {
+          start: 0.08,
+          mid: 0.9,
+          end: 1,
+          cp1x: 0.22,
+          cp1y: 0.26,
+          cp2x: 0.78,
+          cp2y: 1,
+        },
         bands: [
           { id: 'band-1', color: '#90b9e6', offset: 0.0, weight: 1.14, softness: 0.96 },
           { id: 'band-2', color: '#b9ddd0', offset: 1.0, weight: 0.98, softness: 0.98 },
