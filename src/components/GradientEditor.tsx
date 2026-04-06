@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ColorPicker, { useColorPicker } from 'react-best-gradient-color-picker';
+import { cn } from '../lib/utils';
 import type { RayBand } from '../types/config';
 import { bandsToGradientString, gradientObjectToBands, normalizeBandOffsets } from '../utils/gradientStops';
+import { getAnimatedFieldClasses, type AnimatedFieldState } from './fieldAnimationStyles';
 
 type GradientEditorProps = {
   bands: RayBand[];
+  selected?: boolean;
+  onSelect?: (additive: boolean) => void;
+  animationState?: AnimatedFieldState;
   onChange: (bands: RayBand[]) => void;
 };
 
@@ -15,13 +20,35 @@ function serializeBands(bands: RayBand[]): string {
   })));
 }
 
-export function GradientEditor({ bands, onChange }: GradientEditorProps) {
+export function GradientEditor({ bands, selected, onSelect, animationState = 'static', onChange }: GradientEditorProps) {
   const propBandsSignature = useMemo(() => serializeBands(bands), [bands]);
   const [gradientValue, setGradientValue] = useState(() => bandsToGradientString(bands));
   const [pickerWidth, setPickerWidth] = useState(280);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const lastEmittedSignatureRef = useRef(propBandsSignature);
+  const onChangeRef = useRef(onChange);
+  const bandsRef = useRef(bands);
+  const gradientValueRef = useRef(gradientValue);
+  const propBandsSignatureRef = useRef(propBandsSignature);
   const { getGradientObject } = useColorPicker(gradientValue, setGradientValue);
+  const getGradientObjectRef = useRef(getGradientObject);
+  const tone = getAnimatedFieldClasses(animationState);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    bandsRef.current = bands;
+    propBandsSignatureRef.current = propBandsSignature;
+  }, [bands, propBandsSignature]);
+
+  useEffect(() => {
+    gradientValueRef.current = gradientValue;
+  }, [gradientValue]);
+
+  useEffect(() => {
+    getGradientObjectRef.current = getGradientObject;
+  }, [getGradientObject]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -42,29 +69,38 @@ export function GradientEditor({ bands, onChange }: GradientEditorProps) {
   }, []);
 
   useEffect(() => {
-    if (propBandsSignature !== lastEmittedSignatureRef.current) {
-      setGradientValue(bandsToGradientString(bands));
-      lastEmittedSignatureRef.current = propBandsSignature;
+    const nextGradientValue = bandsToGradientString(bands);
+    if (propBandsSignature !== propBandsSignatureRef.current || nextGradientValue !== gradientValueRef.current) {
+      gradientValueRef.current = nextGradientValue;
+      setGradientValue(nextGradientValue);
     }
   }, [bands, propBandsSignature]);
 
   useEffect(() => {
-    const parsed = gradientObjectToBands(getGradientObject(gradientValue), bands);
+    const parsed = gradientObjectToBands(getGradientObjectRef.current(gradientValue), bandsRef.current);
     const parsedSignature = serializeBands(parsed);
 
-    if (parsedSignature !== propBandsSignature) {
-      lastEmittedSignatureRef.current = parsedSignature;
-      onChange(parsed);
+    if (parsedSignature !== propBandsSignatureRef.current) {
+      onChangeRef.current(parsed);
     }
-  }, [bands, getGradientObject, gradientValue, onChange, propBandsSignature]);
+  }, [gradientValue]);
 
   return (
-    <div className="gradient-editor">
+    <div
+      data-field-selectable="true"
+      className={cn(
+        'gradient-editor rounded-md border border-transparent px-2 py-2 transition-colors',
+        onSelect ? 'cursor-pointer hover:border-border/70 hover:bg-muted/20' : '',
+        tone.shell,
+        selected && 'shadow-[inset_0_0_0_1px_rgba(13,153,255,0.35)]',
+      )}
+      onPointerDown={(event) => onSelect?.(event.shiftKey)}
+    >
       <div className="gradient-editor__meta">
         <span>Drag stops, add colors, and reposition them directly on the gradient rail.</span>
-        <strong>{bands.length} stops</strong>
+        <strong className={tone.label}>{bands.length} stops</strong>
       </div>
-      <div ref={containerRef} className="gradient-editor__picker">
+      <div ref={containerRef} className={cn('gradient-editor__picker rounded-sm', tone.input)}>
         <ColorPicker
           className="gradient-editor__color-picker"
           style={{ body: { width: '100%', background: 'transparent' } }}

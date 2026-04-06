@@ -1,12 +1,14 @@
-import { useRef, useState } from 'react';
-import { Pause, Play } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { resolveAnimatedScene } from './animation/resolveAnimatedScene';
+import type { AnimatablePath, AnimatableValue } from './animation/types';
+import { AnimationTransport } from './components/AnimationTransport';
 import { ControlsPanel } from './components/ControlsPanel';
 import { ExportPanel } from './components/ExportPanel';
 import { Panel } from './components/Panel';
 import { PresetPanel } from './components/PresetPanel';
 import { PreviewCanvas } from './components/PreviewCanvas';
-import { Button } from './components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './components/ui/dialog';
+import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { ScrollArea } from './components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
@@ -19,9 +21,30 @@ function StatusPill({ children }: { children: React.ReactNode }) {
   return <span className="rounded-md border border-border/70 bg-muted/55 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{children}</span>;
 }
 
+const DEFAULT_ANIMATION_PATH: AnimatablePath = 'rays.shape.wallProfile';
+
+function toggleSelection(current: AnimatablePath[], nextPaths: AnimatablePath[], additive: boolean): AnimatablePath[] {
+  if (!additive) {
+    return [...nextPaths];
+  }
+
+  const next = new Set(current);
+  for (const path of nextPaths) {
+    if (next.has(path)) {
+      next.delete(path);
+    } else {
+      next.add(path);
+    }
+  }
+
+  return Array.from(next);
+}
+
 export function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewProgressRef = useRef(0);
+  const [selectedFieldPaths, setSelectedFieldPaths] = useState<AnimatablePath[]>([DEFAULT_ANIMATION_PATH]);
+  const [selectedKeyframeIds, setSelectedKeyframeIds] = useState<string[]>([]);
   const [exportState, setExportState] = useState<ExportProgress>({
     frame: 0,
     totalFrames: 0,
@@ -36,9 +59,12 @@ export function App() {
 
   const {
     scene,
+    animation,
     presets,
     activePresetId,
     isPlaying,
+    playhead,
+    autoKeying,
     patchBackground,
     patchExport,
     patchRays,
@@ -47,6 +73,12 @@ export function App() {
     replaceRayBands,
     setSeed,
     setPlaying,
+    setPlayhead,
+    setAutoKeying,
+    addKeyframeFromCurrentValue,
+    upsertKeyframeValue,
+    updateKeyframe,
+    removeKeyframe,
     applyPreset,
     duplicateCurrentPreset,
     importPreset,
@@ -56,9 +88,79 @@ export function App() {
 
   const activePreset = presets.find((preset) => preset.id === activePresetId) ?? presets[0];
   const frameCount = Math.max(1, Math.round(scene.export.duration * scene.export.fps));
+  const inspectorConfig = useMemo(
+    () => resolveAnimatedScene(scene, animation, playhead),
+    [scene, animation, playhead],
+  );
+
+  const selectedKeyframeEntries = useMemo(
+    () => animation.tracks.flatMap((track) => track.keyframes
+      .filter((keyframe) => selectedKeyframeIds.includes(keyframe.id))
+      .map((keyframe) => ({ trackId: track.id, keyframeId: keyframe.id }))),
+    [animation.tracks, selectedKeyframeIds],
+  );
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.key !== 'Delete' && event.key !== 'Backspace') || selectedKeyframeEntries.length === 0) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (tagName === 'input' || tagName === 'textarea') {
+        return;
+      }
+
+      for (const entry of selectedKeyframeEntries) {
+        removeKeyframe(entry.trackId, entry.keyframeId);
+      }
+      setSelectedKeyframeIds([]);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [removeKeyframe, selectedKeyframeEntries]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+
+      if (target.closest('[data-field-selectable="true"]') || target.closest('[data-timeline-root="true"]')) {
+        return;
+      }
+
+      setSelectedFieldPaths([]);
+      setSelectedKeyframeIds([]);
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  const handleSelectFields = (paths: AnimatablePath[], additive: boolean) => {
+    setSelectedFieldPaths((current) => {
+      const next = toggleSelection(current, paths, additive);
+      return next.length > 0 ? next : paths;
+    });
+    setSelectedKeyframeIds([]);
+  };
+
+  const handleAutoKeyframe = (path: AnimatablePath, value: AnimatableValue) => {
+    upsertKeyframeValue(path, playhead, value);
+  };
+
+  const handleAddKeyframes = () => {
+    for (const path of selectedFieldPaths) {
+      addKeyframeFromCurrentValue(path, playhead);
+    }
+  };
 
   const handleSaveJson = () => {
-    const json = serializePresetFile(activePreset?.name ?? 'Untitled Preset', scene);
+    const json = serializePresetFile(activePreset?.name ?? 'Untitled Preset', scene, animation);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -91,6 +193,7 @@ export function App() {
         await exportSinglePng(
           {
             config: scene,
+            animation,
             presetName: activePreset?.name ?? 'Preset',
             onProgress: setExportState,
           },
@@ -100,6 +203,7 @@ export function App() {
         const exportFn = format === 'mp4' ? exportMp4Video : exportPngSequence;
         await exportFn({
           config: scene,
+          animation,
           presetName: activePreset?.name ?? 'Preset',
           onProgress: setExportState,
         });
@@ -115,10 +219,6 @@ export function App() {
       setActiveExportFormat(null);
     }
   };
-
-  const handleExportPng = () => runExport('png');
-  const handleExportSinglePng = () => runExport('png-frame');
-  const handleExportMp4 = () => runExport('mp4');
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -137,7 +237,9 @@ export function App() {
           try {
             const text = await file.text();
             const parsed = parsePresetFile(text);
-            importPreset(parsed.name, parsed.config);
+            importPreset(parsed.name, parsed.scene, parsed.animation);
+            setSelectedFieldPaths([DEFAULT_ANIMATION_PATH]);
+            setSelectedKeyframeIds([]);
             setSidebarTab('library');
           } catch (error) {
             window.alert(error instanceof Error ? error.message : 'Unable to load preset JSON.');
@@ -163,10 +265,7 @@ export function App() {
         <aside className="fixed inset-y-0 right-0 z-20 w-[376px] border-l border-border/80 bg-panel">
           <div className="flex h-full flex-col">
             <div className="border-b border-border/70 px-3 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Refraction Generator</div>
-                <Button variant="ghost" size="sm" onClick={() => setPlaying(!isPlaying)}>{isPlaying ? <Pause /> : <Play />}{isPlaying ? 'Pause' : 'Play'}</Button>
-              </div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Refraction Generator</div>
             </div>
 
             <Tabs value={sidebarTab} onValueChange={setSidebarTab} className="flex min-h-0 flex-1 flex-col">
@@ -180,7 +279,13 @@ export function App() {
               <ScrollArea className="min-h-0 flex-1">
                 <TabsContent value="inspector" className="p-3">
                   <ControlsPanel
-                    config={scene}
+                    config={inspectorConfig}
+                    playhead={playhead}
+                    animationTracks={animation.tracks}
+                    selectedFieldPaths={selectedFieldPaths}
+                    autoKeying={autoKeying}
+                    onSelectFields={handleSelectFields}
+                    onAutoKeyframe={handleAutoKeyframe}
                     onPatchExport={patchExport}
                     onPatchBackground={patchBackground}
                     onPatchRays={patchRays}
@@ -200,19 +305,27 @@ export function App() {
                     activeFormat={activeExportFormat}
                     progress={exportState.progress}
                     status={exportState.status}
-                    onExportSinglePng={handleExportSinglePng}
-                    onExportPng={handleExportPng}
-                    onExportMp4={handleExportMp4}
+                    onExportSinglePng={() => runExport('png-frame')}
+                    onExportPng={() => runExport('png')}
+                    onExportMp4={() => runExport('mp4')}
                   />
                 </TabsContent>
                 <TabsContent value="library" className="space-y-3 p-3">
                   <PresetPanel
                     presets={presets}
                     activePresetId={activePresetId}
-                    onApplyPreset={applyPreset}
+                    onApplyPreset={(presetId) => {
+                      applyPreset(presetId);
+                      setSelectedFieldPaths([DEFAULT_ANIMATION_PATH]);
+                      setSelectedKeyframeIds([]);
+                    }}
                     onDuplicatePreset={openDuplicateDialog}
                     onRandomizePreset={randomizePreset}
-                    onResetDefaultPreset={resetToDefaultPreset}
+                    onResetDefaultPreset={() => {
+                      resetToDefaultPreset();
+                      setSelectedFieldPaths([DEFAULT_ANIMATION_PATH]);
+                      setSelectedKeyframeIds([]);
+                    }}
                     onSaveJson={handleSaveJson}
                     onLoadJson={handleLoadJson}
                   />
@@ -222,7 +335,7 @@ export function App() {
           </div>
         </aside>
 
-        <main className="flex min-h-screen flex-col px-0 py-0">
+        <main className="flex min-h-screen flex-col">
           <Panel
             title="Preview"
             actions={
@@ -232,13 +345,69 @@ export function App() {
                 <StatusPill>{scene.particles.enabled ? `${scene.particles.count} particles` : 'Particles off'}</StatusPill>
               </div>
             }
-            className="flex min-h-screen flex-col rounded-none border-0"
+            className="flex min-h-0 flex-1 flex-col rounded-none border-0"
             bodyClassName="flex flex-1 flex-col p-0"
           >
-            <PreviewCanvas config={scene} isPlaying={isPlaying} onProgressChange={(progress) => { previewProgressRef.current = progress; }} />
+            <PreviewCanvas
+              config={scene}
+              animation={animation}
+              isPlaying={isPlaying}
+              playhead={playhead}
+              onProgressChange={(progress) => {
+                previewProgressRef.current = progress;
+              }}
+            />
           </Panel>
+
+          <AnimationTransport
+            autoKeying={autoKeying}
+            isPlaying={isPlaying}
+            playhead={playhead}
+            duration={scene.export.duration}
+            tracks={animation.tracks}
+            selectedFieldPaths={selectedFieldPaths}
+            selectedKeyframeIds={selectedKeyframeIds}
+            onTogglePlaying={() => {
+              if (isPlaying) {
+                setPlaying(false);
+                setPlayhead(previewProgressRef.current);
+              } else {
+                setPlaying(true);
+              }
+            }}
+            onStop={() => {
+              setPlaying(false);
+              setPlayhead(0);
+              previewProgressRef.current = 0;
+            }}
+            onJumpToStart={() => {
+              setPlaying(false);
+              setPlayhead(0);
+              previewProgressRef.current = 0;
+            }}
+            onJumpToEnd={() => {
+              setPlaying(false);
+              setPlayhead(1);
+              previewProgressRef.current = 1;
+            }}
+            onPlayheadChange={(progress) => {
+              setPlaying(false);
+              setPlayhead(progress);
+              previewProgressRef.current = progress;
+            }}
+            onAutoKeyingChange={setAutoKeying}
+            onAddKeyframes={handleAddKeyframes}
+            onMoveKeyframes={(updates) => {
+              for (const update of updates) {
+                updateKeyframe(update.trackId, update.keyframeId, { time: update.time });
+              }
+            }}
+            onSelectedKeyframeIdsChange={setSelectedKeyframeIds}
+          />
         </main>
       </div>
     </div>
   );
 }
+
+

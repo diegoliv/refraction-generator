@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RayBezierProfile } from '../types/config';
+import { cn } from '../lib/utils';
+import { getAnimatedFieldClasses, type AnimatedFieldState } from './fieldAnimationStyles';
 import { Button } from './ui/button';
 
 type ProfileCurveEditorProps = {
@@ -11,6 +13,9 @@ type ProfileCurveEditorProps = {
   topLabel: string;
   bottomLabel: string;
   lineColor?: string;
+  selected?: boolean;
+  onSelect?: (additive: boolean) => void;
+  animationState?: AnimatedFieldState;
   onChange: (profile: RayBezierProfile) => void;
   onReset?: () => void;
 };
@@ -62,6 +67,9 @@ export function ProfileCurveEditor({
   topLabel,
   bottomLabel,
   lineColor = 'rgba(255,255,255,0.95)',
+  selected,
+  onSelect,
+  animationState = 'static',
   onChange,
   onReset,
 }: ProfileCurveEditorProps) {
@@ -125,6 +133,7 @@ export function ProfileCurveEditor({
     };
   }, [activeHandle, onChange, profile]);
 
+  const tone = getAnimatedFieldClasses(animationState);
   const path = `M ${points.start.x} ${points.start.y} Q ${points.cp1.x} ${points.cp1.y}, ${points.mid.x} ${points.mid.y} Q ${points.cp2.x} ${points.cp2.y}, ${points.end.x} ${points.end.y}`;
   const handles = [
     { key: 'start' as const, point: points.start, fill: '#f7f7f7' },
@@ -135,16 +144,25 @@ export function ProfileCurveEditor({
   ];
 
   return (
-    <div className="space-y-2">
+    <div
+      data-field-selectable="true"
+      className={cn(
+        'space-y-2 rounded-md border border-transparent px-2 py-2 transition-colors',
+        onSelect ? 'cursor-pointer hover:border-border/70 hover:bg-muted/20' : '',
+        tone.shell,
+        selected && 'shadow-[inset_0_0_0_1px_rgba(13,153,255,0.35)]',
+      )}
+      onPointerDown={(event) => onSelect?.(event.shiftKey)}
+    >
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-[11px] font-medium text-foreground">{label}</div>
+          <div className={cn('text-[11px] font-medium text-foreground', tone.label)}>{label}</div>
           <div className="text-[10px] leading-4 text-muted-foreground">{description}</div>
         </div>
         {onReset ? <Button type="button" size="sm" variant="ghost" onClick={onReset}>Reset</Button> : null}
       </div>
 
-      <div className="rounded-md border border-border/70 bg-input/35 p-2">
+      <div className={cn('rounded-md border border-border/70 bg-input/35 p-2', tone.input)}>
         <svg ref={svgRef} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-[164px] w-full touch-none select-none">
           <rect x={0} y={0} width={WIDTH} height={HEIGHT} rx={10} fill="rgba(255,255,255,0.03)" />
           {[0, 0.25, 0.5, 0.75, 1].map((step) => {
@@ -174,6 +192,7 @@ export function ProfileCurveEditor({
               strokeWidth={2}
               onPointerDown={(event) => {
                 event.preventDefault();
+                onSelect?.(event.shiftKey);
                 activeHandleRef.current = key;
                 setActiveHandle(key);
               }}

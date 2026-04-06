@@ -984,8 +984,8 @@ function renderShaderScene(resources: ShaderResources, config: SceneConfig, prog
   gl.bindTexture(gl.TEXTURE_2D, backgroundTexture);
 
   gl.uniform2f(uniforms.resolution, width, height);
-  gl.uniform1f(uniforms.coneProgress, config.rays.pausedWhileParticlesMove ? 0 : progress);
-  gl.uniform1f(uniforms.particleProgress, progress);
+  gl.uniform1f(uniforms.coneProgress, config.rays.pausedWhileParticlesMove ? 0 : progress * Math.max(0, config.rays.loopCount));
+  gl.uniform1f(uniforms.particleProgress, progress * Math.max(0, config.rays.loopCount));
   gl.uniform1f(uniforms.seed, config.seed);
   gl.uniform2f(uniforms.origin, config.rays.originX, config.rays.originY);
   gl.uniform1f(uniforms.rotation, config.rays.rotation);
@@ -1071,6 +1071,8 @@ export function createShaderSceneRenderer(): SceneRenderer {
     },
   };
 }
+
+
 
 
 

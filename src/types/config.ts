@@ -47,6 +47,7 @@ export type SceneConfig = {
     driftAmount: number;
     driftSpeed: number;
     rotationSpeed: number;
+    loopCount: number;
     pausedWhileParticlesMove: boolean;
     shape: RayShapeConfig;
     bands: RayBand[];
@@ -94,3 +95,4 @@ export type PresetDefinition = {
   kind: 'builtin' | 'custom' | 'imported';
   config: SceneConfig;
 };
+

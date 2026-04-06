@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import type { AnimationConfig } from '../animation/types';
+import { resolveAnimatedScene } from '../animation/resolveAnimatedScene';
 import { useAnimationFrame } from '../hooks/useAnimationFrame';
 import { createSceneRenderer } from '../rendering/refractionRenderer';
 import type { SceneConfig } from '../types/config';
@@ -6,13 +8,15 @@ import { getLoopProgress } from '../utils/loop';
 
 type PreviewCanvasProps = {
   config: SceneConfig;
+  animation: AnimationConfig;
   isPlaying: boolean;
+  playhead: number;
   onProgressChange?: (progress: number) => void;
 };
 
 function getPreviewSize(container: HTMLElement, config: SceneConfig): { width: number; height: number } {
   const rect = container.getBoundingClientRect();
-  const maxHeight = Math.max(320, window.innerHeight - 52);
+  const maxHeight = Math.max(320, window.innerHeight - 180);
   const aspectRatio = config.export.width / config.export.height;
   const width = Math.max(1, Math.min(rect.width, maxHeight * aspectRatio));
   const height = Math.max(1, width / aspectRatio);
@@ -20,12 +24,34 @@ function getPreviewSize(container: HTMLElement, config: SceneConfig): { width: n
   return { width, height };
 }
 
-export function PreviewCanvas({ config, isPlaying, onProgressChange }: PreviewCanvasProps) {
+export function PreviewCanvas({ config, animation, isPlaying, playhead, onProgressChange }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const contextRef = useRef<CanvasRenderingContext2D | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef(createSceneRenderer());
   const loopStartRef = useRef<number | null>(null);
   const pausedElapsedRef = useRef(0);
+  const lastRenderedProgressRef = useRef(playhead);
+
+  const renderFrame = (progress: number) => {
+    const canvas = canvasRef.current;
+    const context = contextRef.current;
+    if (!canvas || !context || canvas.width <= 0 || canvas.height <= 0) {
+      return;
+    }
+
+    const resolvedConfig = resolveAnimatedScene(config, animation, progress);
+    lastRenderedProgressRef.current = progress;
+    onProgressChange?.(progress);
+
+    rendererRef.current.render({
+      ctx: context,
+      config: resolvedConfig,
+      progress,
+      width: canvas.width,
+      height: canvas.height,
+    });
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -33,6 +59,8 @@ export function PreviewCanvas({ config, isPlaying, onProgressChange }: PreviewCa
     if (!canvas || !container) {
       return undefined;
     }
+
+    contextRef.current = canvas.getContext('2d');
 
     const resize = () => {
       const { width, height } = getPreviewSize(container, config);
@@ -42,6 +70,7 @@ export function PreviewCanvas({ config, isPlaying, onProgressChange }: PreviewCa
       canvas.height = Math.floor(height * dpr);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
+      renderFrame(lastRenderedProgressRef.current);
     };
 
     resize();
@@ -53,51 +82,31 @@ export function PreviewCanvas({ config, isPlaying, onProgressChange }: PreviewCa
 
   useEffect(() => {
     loopStartRef.current = null;
-    pausedElapsedRef.current = 0;
-  }, [config.seed, config.export.duration]);
+    pausedElapsedRef.current = playhead * config.export.duration * 1000;
+  }, [config.seed, config.export.duration, playhead]);
 
   useEffect(() => {
-    if (isPlaying) {
-      loopStartRef.current = null;
+    if (!isPlaying) {
+      renderFrame(playhead);
+      return;
     }
-  }, [isPlaying]);
+
+    loopStartRef.current = null;
+  }, [animation, config, isPlaying, playhead]);
 
   useAnimationFrame((timeMs) => {
-    const canvas = canvasRef.current;
-    if (!canvas || canvas.width <= 0 || canvas.height <= 0) {
-      return;
-    }
-
-    const context = canvas.getContext('2d');
-    if (!context) {
-      return;
-    }
-
     if (loopStartRef.current === null) {
       loopStartRef.current = timeMs - pausedElapsedRef.current;
     }
 
-    const elapsedMs = isPlaying ? timeMs - loopStartRef.current : pausedElapsedRef.current;
-    if (!isPlaying) {
-      pausedElapsedRef.current = elapsedMs;
-    }
-
-    const progress = getLoopProgress(elapsedMs, config.export.duration);
-    onProgressChange?.(progress);
-
-    rendererRef.current.render({
-      ctx: context,
-      config,
-      progress,
-      width: canvas.width,
-      height: canvas.height,
-    });
-  }, true);
+    const elapsedMs = timeMs - loopStartRef.current;
+    pausedElapsedRef.current = elapsedMs;
+    renderFrame(getLoopProgress(elapsedMs, config.export.duration));
+  }, isPlaying);
 
   return (
-    <div ref={containerRef} className="preview-stage flex min-h-[calc(100vh-38px)] flex-1 items-center justify-center">
+    <div ref={containerRef} className="preview-stage flex h-full min-h-[360px] flex-1 items-center justify-center p-6">
       <canvas ref={canvasRef} className="max-w-full" />
     </div>
   );
 }
-

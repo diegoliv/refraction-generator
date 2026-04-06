@@ -1,3 +1,5 @@
+import { cloneAnimation, defaultAnimationConfig } from '../animation/defaults';
+import type { AnimationConfig } from '../animation/types';
 import { createCylinderShape, defaultBlurProfile, defaultOpacityProfile, defaultSceneConfig, defaultWallProfile, linearProfile } from '../config/defaults';
 import type { PresetDefinition, RayBand, RayBezierProfile, RayShapeConfig, SceneConfig } from '../types/config';
 import { clamp, lerp } from './math';
@@ -5,13 +7,20 @@ import { normalizeBandOffsets } from './gradientStops';
 import { createRandom } from './random';
 import { cloneScene, createRuntimeId } from './scene';
 
-export const PRESET_SCHEMA_VERSION = 1;
+export const PRESET_SCHEMA_VERSION = 2;
 
-type PortablePresetFile = {
-  version: number;
-  name: string;
-  config: SceneConfig;
-};
+type PortablePresetFile =
+  | {
+      version: 1;
+      name: string;
+      config: SceneConfig;
+    }
+  | {
+      version: 2;
+      name: string;
+      scene: SceneConfig;
+      animation?: AnimationConfig;
+    };
 
 type LegacyShape = {
   mode?: string;
@@ -158,6 +167,35 @@ function normalizeBands(bands: Partial<RayBand>[]): RayBand[] {
   return normalizeBandOffsets(merged);
 }
 
+function normalizeAnimationConfig(animation: AnimationConfig | undefined): AnimationConfig {
+  if (!animation) {
+    return cloneAnimation(defaultAnimationConfig);
+  }
+
+  return {
+    enabled: animation.enabled !== false,
+    tracks: Array.isArray(animation.tracks)
+      ? animation.tracks
+          .map((track) => ({
+            id: typeof track.id === 'string' ? track.id : createRuntimeId('track'),
+            path: track.path,
+            enabled: track.enabled !== false,
+            keyframes: Array.isArray(track.keyframes)
+              ? track.keyframes
+                  .map((keyframe) => ({
+                    id: typeof keyframe.id === 'string' ? keyframe.id : createRuntimeId('keyframe'),
+                    time: clamp(typeof keyframe.time === 'number' ? keyframe.time : 0, 0, 1),
+                    value: keyframe.value,
+                    easing: keyframe.easing ?? 'linear',
+                  }))
+                  .sort((left, right) => left.time - right.time)
+              : [],
+          }))
+          .filter((track) => typeof track.path === 'string')
+      : [],
+  };
+}
+
 export function normalizeSceneConfig(scene: Partial<SceneConfig>): SceneConfig {
   const legacyRays = scene.rays;
   const hasExplicitLength = typeof legacyRays?.length === 'number';
@@ -234,6 +272,7 @@ export function normalizeSceneConfig(scene: Partial<SceneConfig>): SceneConfig {
   merged.rays.driftAmount = 0;
   merged.rays.driftSpeed = 0;
   merged.rays.rotationSpeed = 1;
+  merged.rays.loopCount = clamp(merged.rays.loopCount ?? defaultSceneConfig.rays.loopCount, 0, 32);
   merged.rays.pausedWhileParticlesMove = Boolean(merged.rays.pausedWhileParticlesMove);
   merged.rays.shape.diameter = clamp(merged.rays.shape.diameter, 0.1, 2.6);
   merged.rays.shape.wallProfile = normalizeCurveProfile(merged.rays.shape.wallProfile, wallFallback);
@@ -256,33 +295,39 @@ export function normalizeSceneConfig(scene: Partial<SceneConfig>): SceneConfig {
   return merged;
 }
 
-export function serializePresetFile(name: string, config: SceneConfig): string {
+export function serializePresetFile(name: string, config: SceneConfig, animation: AnimationConfig = defaultAnimationConfig): string {
   const payload: PortablePresetFile = {
     version: PRESET_SCHEMA_VERSION,
     name,
-    config: normalizeSceneConfig(config),
+    scene: normalizeSceneConfig(config),
+    animation: normalizeAnimationConfig(animation),
   };
 
   return JSON.stringify(payload, null, 2);
 }
 
-export function parsePresetFile(text: string): { name: string; config: SceneConfig } {
+export function parsePresetFile(text: string): { name: string; scene: SceneConfig; animation: AnimationConfig } {
   const parsed = JSON.parse(text) as PortablePresetFile;
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('Preset JSON is invalid.');
-  }
-
-  if (parsed.version !== PRESET_SCHEMA_VERSION) {
-    throw new Error(`Unsupported preset version: ${String(parsed.version)}`);
   }
 
   if (typeof parsed.name !== 'string' || !parsed.name.trim()) {
     throw new Error('Preset name is missing.');
   }
 
+  if (parsed.version === 1) {
+    return {
+      name: parsed.name.trim(),
+      scene: normalizeSceneConfig(parsed.config),
+      animation: cloneAnimation(defaultAnimationConfig),
+    };
+  }
+
   return {
     name: parsed.name.trim(),
-    config: normalizeSceneConfig(parsed.config),
+    scene: normalizeSceneConfig(parsed.scene),
+    animation: normalizeAnimationConfig(parsed.animation),
   };
 }
 
@@ -391,6 +436,7 @@ export function randomizeSceneTastefully(baseScene: SceneConfig): SceneConfig {
       driftAmount: 0,
       driftSpeed: 0,
       rotationSpeed: 1,
+      loopCount: random.range(0.75, 2.5),
       pausedWhileParticlesMove: false,
       shape: {
         diameter,
@@ -436,3 +482,7 @@ export function randomizeSceneTastefully(baseScene: SceneConfig): SceneConfig {
     },
   });
 }
+
+
+
+

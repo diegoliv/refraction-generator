@@ -1,3 +1,5 @@
+import { resolveAnimatedScene } from '../animation/resolveAnimatedScene';
+import type { AnimationConfig } from '../animation/types';
 import type { SceneConfig } from '../types/config';
 import { createSceneRenderer, preloadSceneAssets } from '../rendering/refractionRenderer';
 import { getExactFrameCount, getFrameProgress } from '../utils/loop';
@@ -66,30 +68,34 @@ export function createExportCanvas(config: SceneConfig): { canvas: HTMLCanvasEle
   return { canvas, ctx, frameCount };
 }
 
-export async function createFrameRenderer(config: SceneConfig, ctx: CanvasRenderingContext2D, width: number, height: number, frameCount: number) {
+export async function createFrameRenderer(config: SceneConfig, animation: AnimationConfig | undefined, ctx: CanvasRenderingContext2D, width: number, height: number, frameCount: number) {
   await preloadSceneAssets(config);
   const renderer = createSceneRenderer();
 
   return (frameIndex: number) => {
+    const progress = getFrameProgress(frameIndex, frameCount);
+    const resolvedConfig = animation ? resolveAnimatedScene(config, animation, progress) : config;
+
     renderer.render({
       ctx,
-      config,
-      progress: getFrameProgress(frameIndex, frameCount),
+      config: resolvedConfig,
+      progress,
       width,
       height,
     });
   };
 }
 
-export async function renderSingleFrame(config: SceneConfig, progress: number) {
+export async function renderSingleFrame(config: SceneConfig, animation: AnimationConfig | undefined, progress: number) {
   const { canvas, ctx, frameCount } = createExportCanvas(config);
   await preloadSceneAssets(config);
   const renderer = createSceneRenderer();
   const safeProgress = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+  const resolvedConfig = animation ? resolveAnimatedScene(config, animation, safeProgress) : config;
 
   renderer.render({
     ctx,
-    config,
+    config: resolvedConfig,
     progress: safeProgress,
     width: config.export.width,
     height: config.export.height,
@@ -152,7 +158,7 @@ async function downloadFramesSequentially(
   }
 }
 
-export async function exportSinglePng({ config, presetName, onProgress }: ExportOptions, progress = 0): Promise<void> {
+export async function exportSinglePng({ config, animation, presetName, onProgress }: ExportOptions, progress = 0): Promise<void> {
   onProgress?.({
     frame: 0,
     totalFrames: 1,
@@ -160,7 +166,7 @@ export async function exportSinglePng({ config, presetName, onProgress }: Export
     status: 'Rendering PNG frame...',
   });
 
-  const { canvas } = await renderSingleFrame(config, progress);
+  const { canvas } = await renderSingleFrame(config, animation, progress);
   const blob = await canvasToBlob(canvas);
   const fileName = `${sanitizeName(presetName)}_shader_${config.export.width}x${config.export.height}.png`;
   downloadBlob(blob, fileName);
@@ -173,7 +179,7 @@ export async function exportSinglePng({ config, presetName, onProgress }: Export
   });
 }
 
-export async function exportPngSequence({ config, presetName, onProgress }: ExportOptions): Promise<void> {
+export async function exportPngSequence({ config, animation, presetName, onProgress }: ExportOptions): Promise<void> {
   const { canvas, ctx, frameCount } = createExportCanvas(config);
   const prefix = `${sanitizeName(presetName)}_shader_${config.export.width}x${config.export.height}_${config.export.fps}fps`;
 
@@ -184,7 +190,7 @@ export async function exportPngSequence({ config, presetName, onProgress }: Expo
     status: 'Preparing shader export...',
   });
 
-  const renderFrame = await createFrameRenderer(config, ctx, config.export.width, config.export.height, frameCount);
+  const renderFrame = await createFrameRenderer(config, animation, ctx, config.export.width, config.export.height, frameCount);
 
   const picker = (window as FileWindow).showDirectoryPicker;
   if (picker) {

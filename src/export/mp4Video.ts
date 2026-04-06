@@ -68,9 +68,9 @@ async function getSupportedEncoderConfig(width: number, height: number, fps: num
   throw new Error('This browser cannot encode MP4 video with the current export settings.');
 }
 
-export async function exportMp4Video({ config, presetName, onProgress }: ExportOptions): Promise<void> {
+export async function exportMp4Video({ config, animation, presetName, onProgress }: ExportOptions): Promise<void> {
   const { canvas, ctx, frameCount } = createExportCanvas(config);
-  const renderFrame = await createFrameRenderer(config, ctx, config.export.width, config.export.height, frameCount);
+  const renderFrame = await createFrameRenderer(config, animation, ctx, config.export.width, config.export.height, frameCount);
   const fileStem = `${sanitizeName(presetName)}_shader_${config.export.width}x${config.export.height}_${config.export.fps}fps`;
   const frameDurationUs = Math.round(1_000_000 / config.export.fps);
 
@@ -154,4 +154,3 @@ export async function exportMp4Video({ config, presetName, onProgress }: ExportO
     encoder.close();
   }
 }
-

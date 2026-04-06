@@ -77,6 +77,7 @@ export const defaultSceneConfig: SceneConfig = {
     driftAmount: 0,
     driftSpeed: 0,
     rotationSpeed: 1,
+    loopCount: 1,
     pausedWhileParticlesMove: false,
     shape: createCylinderShape(),
     bands: [
@@ -345,3 +346,4 @@ export const presets: PresetDefinition[] = [
     },
   },
 ];
+

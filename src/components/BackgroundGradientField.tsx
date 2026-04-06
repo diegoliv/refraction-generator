@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ColorPicker, { useColorPicker } from 'react-best-gradient-color-picker';
+import { cn } from '../lib/utils';
+import { getAnimatedFieldClasses, type AnimatedFieldState } from './fieldAnimationStyles';
 
 type BackgroundGradientFieldProps = {
   topColor: string;
   bottomColor: string;
+  selected?: boolean;
+  onSelect?: (additive: boolean) => void;
+  animationState?: AnimatedFieldState;
   onChange: (colors: { topColor: string; bottomColor: string }) => void;
 };
 
@@ -19,13 +24,35 @@ function normalizeColor(value: string | undefined, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
 }
 
-export function BackgroundGradientField({ topColor, bottomColor, onChange }: BackgroundGradientFieldProps) {
+export function BackgroundGradientField({ topColor, bottomColor, selected, onSelect, animationState = 'static', onChange }: BackgroundGradientFieldProps) {
   const colorsSignature = useMemo(() => serializeColors(topColor, bottomColor), [topColor, bottomColor]);
   const [gradientValue, setGradientValue] = useState(() => toGradientString(topColor, bottomColor));
   const [pickerWidth, setPickerWidth] = useState(280);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const lastEmittedSignatureRef = useRef(colorsSignature);
+  const onChangeRef = useRef(onChange);
+  const colorsRef = useRef({ topColor, bottomColor });
+  const colorsSignatureRef = useRef(colorsSignature);
+  const gradientValueRef = useRef(gradientValue);
   const { getGradientObject } = useColorPicker(gradientValue, setGradientValue);
+  const getGradientObjectRef = useRef(getGradientObject);
+  const tone = getAnimatedFieldClasses(animationState);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    colorsRef.current = { topColor, bottomColor };
+    colorsSignatureRef.current = colorsSignature;
+  }, [topColor, bottomColor, colorsSignature]);
+
+  useEffect(() => {
+    gradientValueRef.current = gradientValue;
+  }, [gradientValue]);
+
+  useEffect(() => {
+    getGradientObjectRef.current = getGradientObject;
+  }, [getGradientObject]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -46,28 +73,38 @@ export function BackgroundGradientField({ topColor, bottomColor, onChange }: Bac
   }, []);
 
   useEffect(() => {
-    if (colorsSignature !== lastEmittedSignatureRef.current) {
-      setGradientValue(toGradientString(topColor, bottomColor));
-      lastEmittedSignatureRef.current = colorsSignature;
+    const nextGradientValue = toGradientString(topColor, bottomColor);
+    if (nextGradientValue !== gradientValueRef.current) {
+      gradientValueRef.current = nextGradientValue;
+      setGradientValue(nextGradientValue);
     }
-  }, [bottomColor, colorsSignature, topColor]);
+  }, [topColor, bottomColor]);
 
   useEffect(() => {
-    const gradient = getGradientObject(gradientValue);
+    const gradient = getGradientObjectRef.current(gradientValue);
     const colors = [...(gradient?.colors ?? [])].sort((a, b) => a.left - b.left);
-    const nextTop = normalizeColor(colors[0]?.value, topColor);
-    const nextBottom = normalizeColor(colors[colors.length - 1]?.value, bottomColor);
+    const current = colorsRef.current;
+    const nextTop = normalizeColor(colors[0]?.value, current.topColor);
+    const nextBottom = normalizeColor(colors[colors.length - 1]?.value, current.bottomColor);
     const nextSignature = serializeColors(nextTop, nextBottom);
 
-    if (nextSignature !== colorsSignature) {
-      lastEmittedSignatureRef.current = nextSignature;
-      onChange({ topColor: nextTop, bottomColor: nextBottom });
+    if (nextSignature !== colorsSignatureRef.current) {
+      onChangeRef.current({ topColor: nextTop, bottomColor: nextBottom });
     }
-  }, [bottomColor, colorsSignature, getGradientObject, gradientValue, onChange, topColor]);
+  }, [gradientValue]);
 
   return (
-    <div className="gradient-editor">
-      <div ref={containerRef} className="gradient-editor__picker">
+    <div
+      data-field-selectable="true"
+      className={cn(
+        'gradient-editor rounded-md border border-transparent px-2 py-2 transition-colors',
+        onSelect ? 'cursor-pointer hover:border-border/70 hover:bg-muted/20' : '',
+        tone.shell,
+        selected && 'shadow-[inset_0_0_0_1px_rgba(13,153,255,0.35)]',
+      )}
+      onPointerDown={(event) => onSelect?.(event.shiftKey)}
+    >
+      <div ref={containerRef} className={cn('gradient-editor__picker rounded-sm', tone.input)}>
         <ColorPicker
           className="gradient-editor__color-picker"
           style={{ body: { width: '100%', background: 'transparent' } }}
