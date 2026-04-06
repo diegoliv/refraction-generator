@@ -91,6 +91,7 @@ export const defaultSceneConfig: SceneConfig = {
   },
   particles: {
     enabled: true,
+    style: 'dust',
     count: 26,
     minSize: 0.4,
     maxSize: 1.1,
@@ -100,8 +101,14 @@ export const defaultSceneConfig: SceneConfig = {
     twinkle: 0.14,
     spread: 0.42,
     directionRandomness: 0.14,
-    direction: 'into-apex',
+    direction: 'forward',
     color: '#ffffff',
+    streakLength: 0.72,
+    streakSoftness: 0.7,
+    streakTaper: 0.72,
+    streakDensity: 0.58,
+    streakFlow: 0.62,
+    streakContrast: 0.64,
   },
   postprocessing: {
     softness: 0.7,
@@ -189,7 +196,7 @@ export const presets: PresetDefinition[] = [
         ...defaultSceneConfig.particles,
         count: 18,
         opacity: 0.03,
-        direction: 'into-apex',
+        direction: 'forward',
         color: '#ffffff',
       },
       postprocessing: {
@@ -259,7 +266,7 @@ export const presets: PresetDefinition[] = [
         ...defaultSceneConfig.particles,
         count: 20,
         opacity: 0.035,
-        direction: 'into-apex',
+        direction: 'forward',
         color: '#fff6de',
       },
       postprocessing: {
@@ -326,7 +333,7 @@ export const presets: PresetDefinition[] = [
         ...defaultSceneConfig.particles,
         count: 16,
         opacity: 0.025,
-        direction: 'into-apex',
+        direction: 'forward',
         color: '#f4fbff',
       },
       postprocessing: {

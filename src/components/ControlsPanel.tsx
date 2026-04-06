@@ -140,23 +140,33 @@ export function ControlsPanel({
       <AccordionItem value="particles">
         <AccordionTrigger>Particles</AccordionTrigger>
         <AccordionContent>
-          <ToggleField label="Enable floating dust" checked={config.particles.enabled} onChange={(checked) => onPatchParticles({ enabled: checked })} />
+          <ToggleField label="Enable particles" checked={config.particles.enabled} onChange={(checked) => onPatchParticles({ enabled: checked })} />
           <div className="grid gap-x-3 gap-y-1 md:grid-cols-2">
             <RangeField label="Count" value={config.particles.count} min={0} max={500} step={1} onChange={(value) => onPatchParticles({ count: value })} />
+            <SelectField label="Style" value={config.particles.style} options={[{ label: 'Dust', value: 'dust' }, { label: 'Light Streaks', value: 'light-streaks' }]} onChange={(value) => onPatchParticles({ style: value as SceneConfig['particles']['style'] })} />
             <RangeField label="Opacity" value={config.particles.opacity} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ opacity: value })} />
             <ColorField label="Color" value={config.particles.color} onChange={(value) => onPatchParticles({ color: value })} />
-            <SelectField label="Direction" value={config.particles.direction} options={[{ label: 'Into apex', value: 'into-apex' }, { label: 'From apex', value: 'from-apex' }]} onChange={(value) => onPatchParticles({ direction: value as SceneConfig['particles']['direction'] })} />
-            <RangeField label="Min Size" value={config.particles.minSize} min={0.2} max={4} step={0.01} onChange={(value) => onPatchParticles({ minSize: value })} />
-            <RangeField label="Max Size" value={config.particles.maxSize} min={0.2} max={6} step={0.01} onChange={(value) => onPatchParticles({ maxSize: value })} />
+            <SelectField label="Emission Direction" value={config.particles.direction} options={[{ label: 'Start to End', value: 'forward' }, { label: 'End to Start', value: 'reverse' }]} onChange={(value) => onPatchParticles({ direction: value as SceneConfig['particles']['direction'] })} />
+            <RangeField label={config.particles.style === 'light-streaks' ? 'Min Thickness' : 'Min Size'} value={config.particles.minSize} min={0.2} max={4} step={0.01} onChange={(value) => onPatchParticles({ minSize: value })} />
+            <RangeField label={config.particles.style === 'light-streaks' ? 'Max Thickness' : 'Max Size'} value={config.particles.maxSize} min={0.2} max={6} step={0.01} onChange={(value) => onPatchParticles({ maxSize: value })} />
             <RangeField label="Min Speed" value={config.particles.minSpeed} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ minSpeed: value })} />
             <RangeField label="Max Speed" value={config.particles.maxSpeed} min={0} max={1.5} step={0.01} onChange={(value) => onPatchParticles({ maxSpeed: value })} />
             <RangeField label="Twinkle" value={config.particles.twinkle} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ twinkle: value })} />
             <RangeField label="Spread" value={config.particles.spread} min={0.1} max={1.5} step={0.01} onChange={(value) => onPatchParticles({ spread: value })} />
             <RangeField label="Direction Randomness" value={config.particles.directionRandomness} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ directionRandomness: value })} />
+            {config.particles.style === 'light-streaks' ? (
+              <>
+                <RangeField label="Streak Length" value={config.particles.streakLength} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ streakLength: value })} />
+                <RangeField label="Streak Softness" value={config.particles.streakSoftness} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ streakSoftness: value })} />
+                <RangeField label="Streak Taper" value={config.particles.streakTaper} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ streakTaper: value })} />
+                <RangeField label="Streak Density" value={config.particles.streakDensity} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ streakDensity: value })} />
+                <RangeField label="Streak Flow" value={config.particles.streakFlow} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ streakFlow: value })} />
+                <RangeField label="Streak Contrast" value={config.particles.streakContrast} min={0} max={1} step={0.01} onChange={(value) => onPatchParticles({ streakContrast: value })} />
+              </>
+            ) : null}
           </div>
         </AccordionContent>
       </AccordionItem>
-
       <AccordionItem value="finish">
         <AccordionTrigger>Finishing</AccordionTrigger>
         <AccordionContent>

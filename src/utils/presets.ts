@@ -238,8 +238,16 @@ export function normalizeSceneConfig(scene: Partial<SceneConfig>): SceneConfig {
   merged.rays.shape.diameter = clamp(merged.rays.shape.diameter, 0.1, 2.6);
   merged.rays.shape.wallProfile = normalizeCurveProfile(merged.rays.shape.wallProfile, wallFallback);
   normalizeParticleRanges(merged);
-  merged.particles.direction = merged.particles.direction === 'from-apex' ? 'from-apex' : 'into-apex';
+  merged.particles.style = merged.particles.style === 'light-streaks' ? 'light-streaks' : 'dust';
+  const particleDirection = scene.particles?.direction as string | undefined;
+  merged.particles.direction = particleDirection === 'reverse' || particleDirection === 'from-apex' ? 'reverse' : 'forward';
   merged.particles.color = typeof merged.particles.color === 'string' && merged.particles.color.trim() ? merged.particles.color : defaultSceneConfig.particles.color;
+  merged.particles.streakLength = clamp(merged.particles.streakLength ?? defaultSceneConfig.particles.streakLength, 0, 1);
+  merged.particles.streakSoftness = clamp(merged.particles.streakSoftness ?? defaultSceneConfig.particles.streakSoftness, 0, 1);
+  merged.particles.streakTaper = clamp(merged.particles.streakTaper ?? defaultSceneConfig.particles.streakTaper, 0, 1);
+  merged.particles.streakDensity = clamp(merged.particles.streakDensity ?? defaultSceneConfig.particles.streakDensity, 0, 1);
+  merged.particles.streakFlow = clamp(merged.particles.streakFlow ?? defaultSceneConfig.particles.streakFlow, 0, 1);
+  merged.particles.streakContrast = clamp(merged.particles.streakContrast ?? defaultSceneConfig.particles.streakContrast, 0, 1);
   merged.postprocessing.globalBlur = clamp(merged.postprocessing.globalBlur, 0, 2.5);
   merged.postprocessing.bloom = 0;
   merged.postprocessing.vignette = 0;
@@ -410,7 +418,7 @@ export function randomizeSceneTastefully(baseScene: SceneConfig): SceneConfig {
       twinkle: random.range(0.08, 0.22),
       spread: random.range(0.28, 0.56),
       directionRandomness: random.range(0.08, 0.2),
-      direction: random.range(0, 1) > 0.25 ? 'into-apex' : 'from-apex',
+      direction: random.range(0, 1) > 0.25 ? 'forward' : 'reverse',
       color: '#ffffff',
     },
     postprocessing: {

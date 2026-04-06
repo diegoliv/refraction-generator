@@ -77,6 +77,13 @@ uniform float uParticleSpread;
 uniform float uParticleDirectionRandomness;
 uniform float uParticleDirection;
 uniform vec3 uParticleColor;
+uniform float uParticleStyle;
+uniform float uParticleStreakLength;
+uniform float uParticleStreakSoftness;
+uniform float uParticleStreakTaper;
+uniform float uParticleStreakDensity;
+uniform float uParticleStreakFlow;
+uniform float uParticleStreakContrast;
 uniform float uGrainAmount;
 uniform sampler2D uGradientTexture;
 uniform sampler2D uGradientBlurTexture;
@@ -91,6 +98,12 @@ float hash11(float p) {
   p *= p + 33.33;
   p *= p + p;
   return fract(p);
+}
+
+float hash21(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
 vec3 toLinear(vec3 color) {
@@ -218,14 +231,11 @@ vec4 renderTunnel(vec2 uv, vec2 origin, vec2 aspect) {
   float tunnelCoord = lateral / max(halfWidth, 0.0002);
   float profileBlur = uBlurAmount * blurProfile(axialT);
   float blurAmount = profileBlur + uGlobalBlur;
-  float startProfileBlur = uBlurAmount * blurProfile(0.0) + uGlobalBlur;
-  float endProfileBlur = uBlurAmount * blurProfile(1.0) + uGlobalBlur;
   float opacityFactor = opacityProfile(axialT);
 
-  float startSoft = 0.0009 + startProfileBlur * 0.08;
-  float endSoft = 0.0009 + endProfileBlur * 0.08;
-  float axialMask = smoothstep(startDistance - startSoft, startDistance + startSoft, axial) *
-    (1.0 - smoothstep(endDistance - endSoft, endDistance + endSoft, axial));
+  float capSoftness = 0.0012;
+  float axialMask = smoothstep(startDistance - capSoftness, startDistance + capSoftness, axial) *
+    (1.0 - smoothstep(endDistance - capSoftness, endDistance + capSoftness, axial));
 
   float edgeSoftness = 0.0018 + blurAmount * 0.15;
   float edgeMask = 1.0 - smoothstep(1.0 - edgeSoftness, 1.0 + edgeSoftness * 1.25, abs(tunnelCoord));
@@ -247,16 +257,11 @@ vec4 renderTunnel(vec2 uv, vec2 origin, vec2 aspect) {
   float innerGlow = exp(-pow(tunnelCoord / (0.2 + blurAmount * 0.08), 2.0)) * mix(0.015, 0.04, blurMix);
   float edgeAura = exp(-pow((abs(tunnelCoord) - 0.94) / (0.04 + blurAmount * 0.12), 2.0)) * (0.028 + blurAmount * 0.018);
   float outerVeil = exp(-pow((abs(tunnelCoord) - 1.02) / (0.08 + blurAmount * 0.16), 2.0)) * (0.018 + blurAmount * 0.018);
-  float leftGlow = exp(-pow(axialT / max(0.03, 0.06 + startProfileBlur * 0.12), 2.0)) * 0.08;
-  float rightGlow = exp(-pow((1.0 - axialT) / max(0.03, 0.06 + endProfileBlur * 0.12), 2.0)) * 0.08;
-
   vec3 beamColor = gradientColor;
   beamColor += gradientColor * coreLift;
   beamColor += gradientColor * innerGlow;
   beamColor += gradientColor * edgeAura;
   beamColor += gradientColor * outerVeil;
-  beamColor += tintLift * leftGlow;
-  beamColor += tintLift * rightGlow;
 
   float alpha = tunnelMask * uOpacity * opacityFactor;
   beamColor = toSrgb(beamColor);
@@ -265,7 +270,121 @@ vec4 renderTunnel(vec2 uv, vec2 origin, vec2 aspect) {
   return vec4(clamp(beamColor, 0.0, 1.0), alpha);
 }
 
-vec4 renderParticles(vec2 uv, vec2 origin, vec2 aspect) {
+float renderCometSprite(vec2 local, float flowDir, float thickness, float length, float softness, float contrast) {
+  float trailCoord = flowDir > 0.0 ? clamp(local.x * 0.5 + 0.5, 0.0, 1.0) : clamp(0.5 - local.x * 0.5, 0.0, 1.0);
+  float headCoord = 1.0 - trailCoord;
+  float body = exp(-pow(abs(local.x) / max(length, 0.0001), max(0.42, softness)));
+  float tailFade = mix(0.0, 1.0, pow(trailCoord, 1.35));
+  float tailWidth = mix(1.85, 1.0, pow(trailCoord, 0.72));
+  float tailCross = exp(-pow(abs(local.y) / max(thickness * tailWidth, 0.0001), 1.55));
+  float softTail = body * tailFade * tailCross;
+
+  float headBulb = exp(-pow(local.x / max(length * 0.34, 0.0001), 2.0) - pow(local.y / max(thickness * 1.55, 0.0001), 2.0));
+  float headGlow = exp(-pow(headCoord / 0.26, 2.0));
+  float core = headBulb * headGlow;
+  float cutoff = 1.0 - smoothstep(1.0, 1.22, abs(local.x) / max(length, 0.0001));
+
+  return clamp((softTail + core * mix(0.95, 1.35, contrast)) * cutoff, 0.0, 1.0);
+}
+
+float renderStreakLayer(float axialT, float spreadCoord, float flowDir, float density, float lengthScale, float flowScale, float widthScale, float brightness, float contrast, float softnessBase, float taper, float layerSeed) {
+  float v = spreadCoord * 0.5 + 0.5;
+  float laneDomain = v * density;
+  float laneBase = floor(laneDomain);
+  float maxSprite = 0.0;
+
+  for (int laneOffset = -1; laneOffset <= 1; laneOffset += 1) {
+    float laneCell = laneBase + float(laneOffset);
+    float laneHash = hash21(vec2(laneCell + layerSeed * 17.0, floor(uSeed * 0.13) + layerSeed * 29.0));
+    if (laneHash < mix(0.18, 0.54, contrast)) {
+      continue;
+    }
+
+    float speedValue = mix(uParticleMinSpeed, uParticleMaxSpeed, hash21(vec2(laneCell * 0.37 + layerSeed * 8.0, 5.0 + layerSeed * 3.0)));
+    float speedNorm = clamp(speedValue / 1.5, 0.0, 1.0);
+    float loopCycles = max(1.0, floor(flowScale * mix(1.0, 4.8, pow(speedNorm, 0.88)) + 0.5));
+    float laneCenter = (laneCell + 0.5 + (laneHash - 0.5) * 0.18) / density;
+    float laneLocal = (v - laneCenter) * density;
+
+    float thicknessValue = mix(uParticleMinSize, uParticleMaxSize, hash21(vec2(laneCell * 0.61 + layerSeed * 9.0, 19.0 + layerSeed * 5.0)));
+    float thicknessNorm = clamp((thicknessValue - 0.2) / 5.8, 0.0, 1.0);
+    float spriteThickness = max(0.022, widthScale * mix(0.05, 0.44, pow(thicknessNorm, 0.82)) * mix(1.0, 0.72, taper));
+    spriteThickness *= mix(1.0, 1.34, speedNorm * 0.48);
+
+    float segmentDomain = axialT * lengthScale * mix(0.82, 1.34, laneHash) - uParticleProgress * flowDir * loopCycles + laneHash * 13.7 + layerSeed * 3.1;
+    float segmentBase = floor(segmentDomain);
+
+    for (int segmentOffset = -1; segmentOffset <= 1; segmentOffset += 1) {
+      float segmentCell = segmentBase + float(segmentOffset);
+      float wrappedSegmentCell = mod(segmentCell, loopCycles);
+      float segmentHash = hash21(vec2(laneCell * 0.43 + layerSeed * 11.0, wrappedSegmentCell + floor(uSeed * 0.07) + 7.0));
+      if (segmentHash < 0.34) {
+        continue;
+      }
+
+      float segmentCenter = segmentCell + 0.5 + (segmentHash - 0.5) * 0.28;
+      float segmentLocal = segmentDomain - segmentCenter;
+      float motionBlur = mix(1.1, 4.8, pow(speedNorm, 0.86));
+      float spriteLength = max(0.1, mix(0.12, 1.25, uParticleStreakLength) * mix(0.86, 1.3, segmentHash) * motionBlur);
+      float softness = mix(0.48, softnessBase, 1.0 - speedNorm * 0.72);
+      float sprite = renderCometSprite(vec2(segmentLocal / spriteLength, laneLocal / spriteThickness), flowDir, 1.0, 1.0, softness, contrast);
+      float edgeRoll = 1.0 - smoothstep(0.9, 1.04, abs(spreadCoord));
+      maxSprite = max(maxSprite, sprite * brightness * edgeRoll);
+    }
+  }
+
+  return maxSprite;
+}
+
+vec4 renderStreakField(vec2 uv, vec2 origin, vec2 aspect) {
+  vec2 p = (uv - origin) * aspect;
+  float rotation = radians(uRotation);
+  vec2 axis = vec2(cos(rotation), sin(rotation));
+  vec2 side = vec2(-axis.y, axis.x);
+
+  float axial = dot(p, axis);
+  float lateral = dot(p, side);
+  float tunnelLength = max(0.0001, max(0.001, uTunnelLength) * aspect.x);
+  float startDistance = -0.5 * tunnelLength;
+  float endDistance = 0.5 * tunnelLength;
+  float axialT = clamp((axial - startDistance) / tunnelLength, 0.0, 1.0);
+  float halfWidth = tunnelHalfWidth(axialT);
+  float tunnelCoord = lateral / max(halfWidth, 0.0002);
+  float profileBlur = uBlurAmount * blurProfile(axialT);
+  float blurAmount = profileBlur + uGlobalBlur;
+  float opacityFactor = opacityProfile(axialT);
+
+  float capSoftness = 0.0012;
+  float axialMask = smoothstep(startDistance - capSoftness, startDistance + capSoftness, axial) *
+    (1.0 - smoothstep(endDistance - capSoftness, endDistance + capSoftness, axial));
+  float edgeSoftness = 0.0016 + blurAmount * 0.12;
+  float edgeMask = 1.0 - smoothstep(1.0 - edgeSoftness, 1.0 + edgeSoftness * 1.2, abs(tunnelCoord));
+  float tunnelMask = axialMask * edgeMask;
+
+  float flowDir = uParticleDirection > 0.0 ? 1.0 : -1.0;
+  float spreadNorm = clamp(uParticleSpread / 1.5, 0.0, 1.0);
+  float spreadEnvelope = mix(0.18, 2.3, spreadNorm);
+  float spreadCoord = tunnelCoord / max(spreadEnvelope, 0.0001);
+  float density = mix(8.0, 42.0, uParticleStreakDensity) * mix(0.8, 1.5, spreadNorm) * mix(0.55, 1.35, clamp(uParticleCount / 180.0, 0.0, 1.0));
+  float flowScale = mix(1.0, 8.0, uParticleStreakFlow);
+  float contrast = mix(0.12, 1.0, uParticleStreakContrast);
+  float softnessBase = mix(1.12, 2.45, 1.0 - uParticleStreakSoftness);
+  float taper = mix(0.12, 1.0, uParticleStreakTaper);
+
+  float baseLayer = renderStreakLayer(axialT, spreadCoord, flowDir, density, mix(16.0, 56.0, uParticleStreakLength), flowScale, 1.0, 0.42, contrast, softnessBase, taper, 0.17);
+  float heroLayer = renderStreakLayer(axialT, spreadCoord, flowDir, density * 0.62, mix(9.0, 28.0, uParticleStreakLength), flowScale * 0.8, 0.76, 0.92, min(1.0, contrast * 1.08), max(0.94, softnessBase * 0.88), taper, 0.43);
+  float hazeLayer = renderStreakLayer(axialT, spreadCoord, flowDir, density * 0.36, mix(7.0, 16.0, uParticleStreakLength), flowScale * 0.54, 1.9, 0.12, max(0.08, contrast * 0.48), max(0.86, softnessBase * 0.74), taper * 0.78, 0.79);
+
+  float streakField = baseLayer + heroLayer + hazeLayer;
+  float centerLift = exp(-pow(spreadCoord / (1.04 + spreadNorm * 0.4), 2.0)) * 0.1;
+  float alpha = clamp(streakField * (0.92 + centerLift), 0.0, 1.0) * tunnelMask * opacityFactor * uParticleOpacity * 1.35;
+  vec3 color = clamp(uParticleColor * (0.94 + streakField * 0.08), 0.0, 1.0);
+
+  return vec4(color, alpha);
+}
+
+vec4 renderDustParticles(vec2 uv, vec2 origin, vec2 aspect) {
+
   vec4 total = vec4(0.0);
   float count = min(uParticleCount, float(500.0));
   float pixelScale = 1.0 / max(1.0, min(uResolution.x, uResolution.y));
@@ -310,9 +429,7 @@ vec4 renderParticles(vec2 uv, vec2 origin, vec2 aspect) {
     float edgeRadius = mix(0.86, 1.18, pow(radialNoise, 0.78));
     float radialAbs = mix(interiorRadius, edgeRadius, edgeBias) * spreadScale;
 
-    float funnelFloor = mix(0.18, 0.82, edgeBias);
-    float funnel = mix(funnelFloor, 1.0, smoothstep(0.03, 0.32, axialT));
-    float lateral = sideSign * radialAbs * halfWidth * funnel;
+    float lateral = sideSign * radialAbs * halfWidth;
     float sway = sin(uParticleProgress * TAU * cycles + swayPhase) * halfWidth * swayAmount * mix(0.35, 1.0, axialT);
     float axialJitter = cos(uParticleProgress * TAU * cycles + swayPhase * 0.7) * tunnelLength * 0.006 * uParticleDirectionRandomness;
 
@@ -341,6 +458,14 @@ vec4 renderParticles(vec2 uv, vec2 origin, vec2 aspect) {
     total.rgb = vec3(0.0);
   }
   return total;
+}
+
+vec4 renderParticles(vec2 uv, vec2 origin, vec2 aspect) {
+  if (uParticleStyle > 0.5) {
+    return renderStreakField(uv, origin, aspect);
+  }
+
+  return renderDustParticles(uv, origin, aspect);
 }
 
 float renderGrain(vec2 uv) {
@@ -433,6 +558,13 @@ type ShaderResources = {
     particleDirectionRandomness: WebGLUniformLocation | null;
     particleDirection: WebGLUniformLocation | null;
     particleColor: WebGLUniformLocation | null;
+    particleStyle: WebGLUniformLocation | null;
+    particleStreakLength: WebGLUniformLocation | null;
+    particleStreakSoftness: WebGLUniformLocation | null;
+    particleStreakTaper: WebGLUniformLocation | null;
+    particleStreakDensity: WebGLUniformLocation | null;
+    particleStreakFlow: WebGLUniformLocation | null;
+    particleStreakContrast: WebGLUniformLocation | null;
     grainAmount: WebGLUniformLocation | null;
     gradientTexture: WebGLUniformLocation | null;
     gradientBlurTexture: WebGLUniformLocation | null;
@@ -740,6 +872,13 @@ function createShaderResources(canvas: HTMLCanvasElement): ShaderInitResult {
         particleDirectionRandomness: gl.getUniformLocation(programResult.program, 'uParticleDirectionRandomness'),
         particleDirection: gl.getUniformLocation(programResult.program, 'uParticleDirection'),
         particleColor: gl.getUniformLocation(programResult.program, 'uParticleColor'),
+        particleStyle: gl.getUniformLocation(programResult.program, 'uParticleStyle'),
+        particleStreakLength: gl.getUniformLocation(programResult.program, 'uParticleStreakLength'),
+        particleStreakSoftness: gl.getUniformLocation(programResult.program, 'uParticleStreakSoftness'),
+        particleStreakTaper: gl.getUniformLocation(programResult.program, 'uParticleStreakTaper'),
+        particleStreakDensity: gl.getUniformLocation(programResult.program, 'uParticleStreakDensity'),
+        particleStreakFlow: gl.getUniformLocation(programResult.program, 'uParticleStreakFlow'),
+        particleStreakContrast: gl.getUniformLocation(programResult.program, 'uParticleStreakContrast'),
         grainAmount: gl.getUniformLocation(programResult.program, 'uGrainAmount'),
         gradientTexture: gl.getUniformLocation(programResult.program, 'uGradientTexture'),
         gradientBlurTexture: gl.getUniformLocation(programResult.program, 'uGradientBlurTexture'),
@@ -887,8 +1026,15 @@ function renderShaderScene(resources: ShaderResources, config: SceneConfig, prog
   gl.uniform1f(uniforms.particleTwinkle, config.particles.twinkle);
   gl.uniform1f(uniforms.particleSpread, config.particles.spread);
   gl.uniform1f(uniforms.particleDirectionRandomness, config.particles.directionRandomness);
-  gl.uniform1f(uniforms.particleDirection, config.particles.direction === 'from-apex' ? -1 : 1);
+  gl.uniform1f(uniforms.particleDirection, config.particles.direction === 'reverse' ? -1 : 1);
   setColorUniform(gl, uniforms.particleColor, config.particles.color);
+  gl.uniform1f(uniforms.particleStyle, config.particles.style === 'light-streaks' ? 1 : 0);
+  gl.uniform1f(uniforms.particleStreakLength, config.particles.streakLength);
+  gl.uniform1f(uniforms.particleStreakSoftness, config.particles.streakSoftness);
+  gl.uniform1f(uniforms.particleStreakTaper, config.particles.streakTaper);
+  gl.uniform1f(uniforms.particleStreakDensity, config.particles.streakDensity);
+  gl.uniform1f(uniforms.particleStreakFlow, config.particles.streakFlow);
+  gl.uniform1f(uniforms.particleStreakContrast, config.particles.streakContrast);
   gl.uniform1f(uniforms.grainAmount, config.postprocessing.grain);
   gl.uniform1i(uniforms.gradientTexture, 0);
   gl.uniform1i(uniforms.gradientBlurTexture, 1);

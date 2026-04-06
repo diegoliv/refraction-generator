@@ -53,6 +53,7 @@ export type SceneConfig = {
   };
   particles: {
     enabled: boolean;
+    style: 'dust' | 'light-streaks';
     count: number;
     minSize: number;
     maxSize: number;
@@ -62,8 +63,14 @@ export type SceneConfig = {
     twinkle: number;
     spread: number;
     directionRandomness: number;
-    direction: 'into-apex' | 'from-apex';
+    direction: 'forward' | 'reverse';
     color: string;
+    streakLength: number;
+    streakSoftness: number;
+    streakTaper: number;
+    streakDensity: number;
+    streakFlow: number;
+    streakContrast: number;
   };
   postprocessing: {
     softness: number;
